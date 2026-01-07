@@ -1,3 +1,3 @@
-module ProfZoom
+module github.com/Dest1on/ProfZoom-backend
 
-go 1.24.4
+go 1.22
