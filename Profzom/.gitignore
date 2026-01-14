@@ -1,0 +1,63 @@
+# ======================
+# Go
+# ======================
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go build cache
+/bin/
+/build/
+/dist/
+
+# Go workspace
+go.work
+go.work.sum
+
+# ======================
+# Environment
+# ======================
+.env
+.env.*
+!.env.example
+
+# ======================
+# Docker
+# ======================
+docker-data/
+*.log
+
+# ======================
+# IDE / Editors
+# ======================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ======================
+# OS
+# ======================
+.DS_Store
+Thumbs.db
+
+# ======================
+# Coverage / reports
+# ======================
+coverage.out
+coverage.html
+
+# ======================
+# Temporary files
+# ======================
+tmp/
+temp/
+
+# ======================
+# Local scripts / misc
+# ======================
+*.local

@@ -1,0 +1,41 @@
+# Бинарники Go
+*.exe
+*.out
+*.test
+
+# Кэш, временные файлы и IDE
+*.log
+*.swp
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+
+# Зависимости Go
+vendor/
+
+# Сборочный кэш
+bin/
+build/
+dist/
+
+# Docker
+*.env
+.env
+.docker/
+
+# Тестовые отчёты и покрытия
+*.cover
+*.cov
+coverage.out
+
+# Модули, если не используешь vendoring
+go.sum
+
+# Базы данных / миграции временные
+*.sqlite
+*.db
+
+# Webhook TLS-сертификаты (если будут)
+cert.pem
+key.pem

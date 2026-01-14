@@ -1,0 +1,127 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Config хранит конфигурацию времени выполнения для сервиса OTP бота.
+type Config struct {
+	BotToken                    string
+	WebhookSecret               string
+	InternalAuthKey             string
+	DatabaseURL                 string
+	DBDriver                    string
+	Port                        string
+	LogLevel                    string
+	TelegramTimeout             time.Duration
+	OTPSendPerMin               int
+	OTPSendIPPerMin             int
+	OTPSendBotPerMin            int
+	LinkTokenTTL                time.Duration
+	LinkTokenRateLimitPerMin    int
+	LinkTokenRateLimitIPPerMin  int
+	LinkTokenRateLimitBotPerMin int
+}
+
+// Load читает конфигурацию из переменных окружения.
+func Load() (Config, error) {
+	otpPerMin := intOr("OTP_RATE_LIMIT_PER_MIN", 2)
+	otpBotPerMin := intOr("OTP_RATE_LIMIT_BOT_PER_MIN", 60)
+	linkTokenPerMin := intOr("LINK_TOKEN_RATE_LIMIT_PER_MIN", 5)
+
+	cfg := Config{
+		Port:                        envOr("PORT", "8080"),
+		LogLevel:                    envOr("LOG_LEVEL", "info"),
+		TelegramTimeout:             durationOr("TELEGRAM_TIMEOUT", 5*time.Second),
+		OTPSendPerMin:               otpPerMin,
+		OTPSendIPPerMin:             intOr("OTP_RATE_LIMIT_IP_PER_MIN", otpPerMin),
+		OTPSendBotPerMin:            otpBotPerMin,
+		LinkTokenTTL:                durationOr("TELEGRAM_LINK_TTL", 10*time.Minute),
+		LinkTokenRateLimitPerMin:    linkTokenPerMin,
+		LinkTokenRateLimitIPPerMin:  intOr("LINK_TOKEN_RATE_LIMIT_IP_PER_MIN", linkTokenPerMin),
+		LinkTokenRateLimitBotPerMin: intOr("LINK_TOKEN_RATE_LIMIT_BOT_PER_MIN", linkTokenPerMin),
+		DBDriver:                    envOr("DB_DRIVER", "pgx"),
+	}
+
+	cfg.BotToken = strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+	cfg.WebhookSecret = strings.TrimSpace(os.Getenv("TELEGRAM_WEBHOOK_SECRET"))
+	cfg.InternalAuthKey = strings.TrimSpace(os.Getenv("OTP_BOT_INTERNAL_KEY"))
+	if cfg.InternalAuthKey == "" {
+		cfg.InternalAuthKey = strings.TrimSpace(os.Getenv("INTERNAL_AUTH_KEY"))
+	}
+	cfg.DatabaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+
+	missing := make([]string, 0, 4)
+	if cfg.BotToken == "" {
+		missing = append(missing, "TELEGRAM_BOT_TOKEN")
+	}
+	if cfg.InternalAuthKey == "" {
+		missing = append(missing, "OTP_BOT_INTERNAL_KEY")
+	}
+	if len(missing) > 0 {
+		return Config{}, fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
+	}
+	if cfg.LinkTokenTTL < 5*time.Minute || cfg.LinkTokenTTL > 10*time.Minute {
+		return Config{}, fmt.Errorf("TELEGRAM_LINK_TTL must be between 5m and 10m")
+	}
+	invalidLimits := make([]string, 0, 6)
+	if cfg.OTPSendPerMin <= 0 {
+		invalidLimits = append(invalidLimits, "OTP_RATE_LIMIT_PER_MIN")
+	}
+	if cfg.OTPSendIPPerMin <= 0 {
+		invalidLimits = append(invalidLimits, "OTP_RATE_LIMIT_IP_PER_MIN")
+	}
+	if cfg.OTPSendBotPerMin <= 0 {
+		invalidLimits = append(invalidLimits, "OTP_RATE_LIMIT_BOT_PER_MIN")
+	}
+	if cfg.LinkTokenRateLimitPerMin <= 0 {
+		invalidLimits = append(invalidLimits, "LINK_TOKEN_RATE_LIMIT_PER_MIN")
+	}
+	if cfg.LinkTokenRateLimitIPPerMin <= 0 {
+		invalidLimits = append(invalidLimits, "LINK_TOKEN_RATE_LIMIT_IP_PER_MIN")
+	}
+	if cfg.LinkTokenRateLimitBotPerMin <= 0 {
+		invalidLimits = append(invalidLimits, "LINK_TOKEN_RATE_LIMIT_BOT_PER_MIN")
+	}
+	if len(invalidLimits) > 0 {
+		return Config{}, fmt.Errorf("rate limit values must be positive: %s", strings.Join(invalidLimits, ", "))
+	}
+
+	return cfg, nil
+}
+
+func envOr(key, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func durationOr(key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+	return duration
+}
+
+func intOr(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
