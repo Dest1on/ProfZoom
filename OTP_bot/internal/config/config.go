@@ -44,7 +44,7 @@ func Load() (Config, error) {
 		LinkTokenRateLimitPerMin:    linkTokenPerMin,
 		LinkTokenRateLimitIPPerMin:  intOr("LINK_TOKEN_RATE_LIMIT_IP_PER_MIN", linkTokenPerMin),
 		LinkTokenRateLimitBotPerMin: intOr("LINK_TOKEN_RATE_LIMIT_BOT_PER_MIN", linkTokenPerMin),
-		DBDriver:                    envOr("DB_DRIVER", "pgx"),
+		DBDriver:                    envOr("DB_DRIVER", "postgres"),
 	}
 
 	cfg.BotToken = strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
@@ -54,6 +54,10 @@ func Load() (Config, error) {
 		cfg.InternalAuthKey = strings.TrimSpace(os.Getenv("INTERNAL_AUTH_KEY"))
 	}
 	cfg.DatabaseURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	cfg.DBDriver = strings.ToLower(cfg.DBDriver)
+	if cfg.DBDriver == "pq" || cfg.DBDriver == "postgresql" {
+		cfg.DBDriver = "postgres"
+	}
 
 	missing := make([]string, 0, 4)
 	if cfg.BotToken == "" {

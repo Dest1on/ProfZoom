@@ -1,4 +1,4 @@
-﻿-- +goose Up
+-- +goose Up
 ALTER TABLE student_profiles
     ADD COLUMN name TEXT NOT NULL DEFAULT '',
     ADD COLUMN course INT NOT NULL DEFAULT 0;

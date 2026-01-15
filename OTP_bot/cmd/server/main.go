@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	_ "github.com/lib/pq"
+
 	"otp_bot/internal/otpbot"
 )
 
