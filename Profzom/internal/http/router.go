@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/user"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/handlers"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/metrics"
-	httpmw "github.com/Dest1on/ProfZoom-backend/internal/http/middleware"
+	"profzom/internal/domain/user"
+	"profzom/internal/http/handlers"
+	"profzom/internal/http/metrics"
+	httpmw "profzom/internal/http/middleware"
 )
 
 type RouterDependencies struct {

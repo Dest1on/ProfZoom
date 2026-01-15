@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
+	"profzom/internal/common"
 )
 
 type responseWriter struct {

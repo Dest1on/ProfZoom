@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/app"
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/application"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/middleware"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/response"
+	"profzom/internal/app"
+	"profzom/internal/common"
+	"profzom/internal/domain/application"
+	"profzom/internal/http/middleware"
+	"profzom/internal/http/response"
 )
 
 type ApplicationHandler struct {

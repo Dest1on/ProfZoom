@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
+	"profzom/internal/common"
 )
 
 func Recover(next http.Handler) http.Handler {

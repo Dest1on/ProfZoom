@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/profzoom/otp_bot/internal/observability"
+	"otp_bot/internal/observability"
 )
 
 const (

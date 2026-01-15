@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/profzoom/otp_bot/internal/linking"
-	"github.com/profzoom/otp_bot/internal/observability"
-	"github.com/profzoom/otp_bot/internal/phone"
-	"github.com/profzoom/otp_bot/internal/ratelimit"
-	"github.com/profzoom/otp_bot/internal/telegram"
+	"otp_bot/internal/linking"
+	"otp_bot/internal/observability"
+	"otp_bot/internal/phone"
+	"otp_bot/internal/ratelimit"
+	"otp_bot/internal/telegram"
 )
 
 const otpMessagePrefix = "ProfZoom login code: "

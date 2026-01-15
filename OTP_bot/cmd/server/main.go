@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/profzoom/otp_bot/internal/otpbot"
+	"otp_bot/internal/otpbot"
 )
 
 func main() {

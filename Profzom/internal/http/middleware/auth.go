@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/user"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/response"
-	"github.com/Dest1on/ProfZoom-backend/internal/security"
+	"profzom/internal/common"
+	"profzom/internal/domain/user"
+	"profzom/internal/http/response"
+	"profzom/internal/security"
 )
 
 type contextKey string

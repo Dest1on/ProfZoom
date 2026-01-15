@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
+	"profzom/internal/common"
 )
 
 func analyticsPayload(ctx context.Context, payload map[string]string) []byte {

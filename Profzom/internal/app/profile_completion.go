@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/profile"
+	"profzom/internal/domain/profile"
 )
 
 func StudentCompletion(p profile.StudentProfile) int {

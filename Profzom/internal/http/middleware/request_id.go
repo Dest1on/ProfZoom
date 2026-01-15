@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
+	"profzom/internal/common"
 )
 
 func RequestID(next http.Handler) http.Handler {

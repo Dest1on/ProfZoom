@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/analytics"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/auth"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/user"
-	"github.com/Dest1on/ProfZoom-backend/internal/integration/otpbot"
-	"github.com/Dest1on/ProfZoom-backend/internal/security"
+	"profzom/internal/common"
+	"profzom/internal/domain/analytics"
+	"profzom/internal/domain/auth"
+	"profzom/internal/domain/user"
+	"profzom/internal/integration/otpbot"
+	"profzom/internal/security"
 )
 
 // AuthService предоставляет основную реализацию авторизации, используемую HTTP-обработчиками

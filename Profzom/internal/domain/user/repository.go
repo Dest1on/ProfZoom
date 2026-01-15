@@ -3,7 +3,7 @@ package user
 import (
 	"context"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
+	"profzom/internal/common"
 )
 
 type Repository interface {

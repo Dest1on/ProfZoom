@@ -10,14 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/profzoom/otp_bot/internal/config"
-	"github.com/profzoom/otp_bot/internal/httpapi"
-	"github.com/profzoom/otp_bot/internal/linking"
-	"github.com/profzoom/otp_bot/internal/logging"
-	"github.com/profzoom/otp_bot/internal/observability"
-	"github.com/profzoom/otp_bot/internal/ratelimit"
-	"github.com/profzoom/otp_bot/internal/store/postgres"
-	"github.com/profzoom/otp_bot/internal/telegram"
+	"otp_bot/internal/config"
+	"otp_bot/internal/httpapi"
+	"otp_bot/internal/linking"
+	"otp_bot/internal/logging"
+	"otp_bot/internal/observability"
+	"otp_bot/internal/ratelimit"
+	"otp_bot/internal/store/postgres"
+	"otp_bot/internal/telegram"
 )
 
 // Run запускает сервис OTP бота и блокирует выполнение до остановки.

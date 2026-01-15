@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/http/metrics"
+	"profzom/internal/http/metrics"
 )
 
 func Metrics(collector *metrics.Collector) func(http.Handler) http.Handler {

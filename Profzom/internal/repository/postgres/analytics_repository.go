@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/analytics"
+	"profzom/internal/common"
+	"profzom/internal/domain/analytics"
 )
 
 type AnalyticsRepository struct {

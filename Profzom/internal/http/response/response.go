@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/metrics"
+	"profzom/internal/common"
+	"profzom/internal/http/metrics"
 )
 
 type ErrorResponse struct {

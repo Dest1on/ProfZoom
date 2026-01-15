@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/application"
+	"profzom/internal/common"
+	"profzom/internal/domain/application"
 )
 
 type ApplicationRepository struct {

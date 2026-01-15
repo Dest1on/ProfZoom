@@ -1,12 +1,12 @@
-﻿package app
+package app
 
 import (
     "context"
     "strings"
 
-    "github.com/Dest1on/ProfZoom-backend/internal/common"
-    "github.com/Dest1on/ProfZoom-backend/internal/domain/analytics"
-    "github.com/Dest1on/ProfZoom-backend/internal/domain/user"
+    "profzom/internal/common"
+    "profzom/internal/domain/analytics"
+    "profzom/internal/domain/user"
 )
 
 type UserService struct {

@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/profzoom/otp_bot/internal/observability"
-	"github.com/profzoom/otp_bot/internal/phone"
+	"otp_bot/internal/observability"
+	"otp_bot/internal/phone"
 )
 
 const (

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/profzoom/otp_bot/internal/linking"
+	"otp_bot/internal/linking"
 )
 
 // TelegramLinkStore хранит привязки Telegram в Postgres.

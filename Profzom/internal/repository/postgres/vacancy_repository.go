@@ -8,8 +8,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/vacancy"
+	"profzom/internal/common"
+	"profzom/internal/domain/vacancy"
 )
 
 type VacancyRepository struct {

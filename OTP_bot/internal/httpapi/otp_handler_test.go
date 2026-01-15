@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/profzoom/otp_bot/internal/linking"
-	"github.com/profzoom/otp_bot/internal/ratelimit"
+	"otp_bot/internal/linking"
+	"otp_bot/internal/ratelimit"
 )
 
 type otpSender struct {

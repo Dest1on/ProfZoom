@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/profzoom/otp_bot/internal/telegram"
+	"otp_bot/internal/telegram"
 )
 
 func TestLinkTokenLifecycle(t *testing.T) {

@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/analytics"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/profile"
+	"profzom/internal/common"
+	"profzom/internal/domain/analytics"
+	"profzom/internal/domain/profile"
 )
 
 type ProfileService struct {

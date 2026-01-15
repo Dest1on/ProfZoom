@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/analytics"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/application"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/profile"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/vacancy"
+	"profzom/internal/common"
+	"profzom/internal/domain/analytics"
+	"profzom/internal/domain/application"
+	"profzom/internal/domain/profile"
+	"profzom/internal/domain/vacancy"
 )
 
 type ApplicationService struct {

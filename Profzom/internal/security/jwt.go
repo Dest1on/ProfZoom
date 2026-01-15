@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
+	"profzom/internal/common"
 )
 
 type JWTProvider struct {

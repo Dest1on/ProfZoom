@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/profzoom/otp_bot/internal/telegram"
+	"otp_bot/internal/telegram"
 )
 
 // ErrRateLimited сообщает о превышении лимита запросов.

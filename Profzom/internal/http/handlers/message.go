@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/app"
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/middleware"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/response"
+	"profzom/internal/app"
+	"profzom/internal/common"
+	"profzom/internal/http/middleware"
+	"profzom/internal/http/response"
 )
 
 type MessageHandler struct {

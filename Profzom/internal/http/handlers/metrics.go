@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/http/metrics"
-	"github.com/Dest1on/ProfZoom-backend/internal/http/response"
+	"profzom/internal/http/metrics"
+	"profzom/internal/http/response"
 )
 
 type MetricsHandler struct {

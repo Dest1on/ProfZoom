@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/user"
+	"profzom/internal/common"
+	"profzom/internal/domain/user"
 )
 
 type UserRepository struct {

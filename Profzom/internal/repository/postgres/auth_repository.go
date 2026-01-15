@@ -8,8 +8,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/auth"
+	"profzom/internal/common"
+	"profzom/internal/domain/auth"
 )
 
 type OTPRepository struct {

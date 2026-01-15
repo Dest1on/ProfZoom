@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/Dest1on/ProfZoom-backend/internal/common"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/analytics"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/application"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/message"
-	"github.com/Dest1on/ProfZoom-backend/internal/domain/vacancy"
+	"profzom/internal/common"
+	"profzom/internal/domain/analytics"
+	"profzom/internal/domain/application"
+	"profzom/internal/domain/message"
+	"profzom/internal/domain/vacancy"
 )
 
 type MessageService struct {
