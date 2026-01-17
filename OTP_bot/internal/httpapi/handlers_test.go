@@ -19,7 +19,7 @@ func TestLinkTokenRequiresAuth(t *testing.T) {
 	registrar := linking.NewLinkTokenRegistrar(tokenStore, time.Minute, []byte("secret"))
 	api := NewAPI(registrar, linkStore, "secret", ratelimit.NoopLimiter{}, ratelimit.NoopLimiter{}, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/telegram/link-token", bytes.NewReader([]byte(`{"phone":"+15550001111","token":"token"}`)))
+	req := httptest.NewRequest(http.MethodPost, "/telegram/link-token", bytes.NewReader([]byte(`{"user_id":"user-1","token":"token"}`)))
 	recorder := httptest.NewRecorder()
 
 	api.HandleLinkToken(recorder, req)
@@ -34,7 +34,7 @@ func TestLinkTokenInvalidPayload(t *testing.T) {
 	registrar := linking.NewLinkTokenRegistrar(tokenStore, time.Minute, []byte("secret"))
 	api := NewAPI(registrar, linkStore, "secret", ratelimit.NoopLimiter{}, ratelimit.NoopLimiter{}, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/telegram/link-token", bytes.NewReader([]byte(`{"phone":"","token":""}`)))
+	req := httptest.NewRequest(http.MethodPost, "/telegram/link-token", bytes.NewReader([]byte(`{"user_id":"","token":""}`)))
 	req.Header.Set("Authorization", "Bearer secret")
 	recorder := httptest.NewRecorder()
 
@@ -50,7 +50,7 @@ func TestLinkTokenSuccess(t *testing.T) {
 	registrar := linking.NewLinkTokenRegistrar(tokenStore, time.Minute, []byte("secret"))
 	api := NewAPI(registrar, linkStore, "secret", ratelimit.NoopLimiter{}, ratelimit.NoopLimiter{}, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/telegram/link-token", bytes.NewReader([]byte(`{"phone":"+15550001111","token":"token"}`)))
+	req := httptest.NewRequest(http.MethodPost, "/telegram/link-token", bytes.NewReader([]byte(`{"user_id":"user-1","token":"token"}`)))
 	req.Header.Set("Authorization", "Bearer secret")
 	recorder := httptest.NewRecorder()
 
@@ -73,7 +73,7 @@ func TestStatusNotLinked(t *testing.T) {
 	registrar := linking.NewLinkTokenRegistrar(tokenStore, time.Minute, []byte("secret"))
 	api := NewAPI(registrar, linkStore, "secret", ratelimit.NoopLimiter{}, ratelimit.NoopLimiter{}, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/telegram/status?phone=+15550001111", nil)
+	req := httptest.NewRequest(http.MethodGet, "/telegram/status?user_id=user-1", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	recorder := httptest.NewRecorder()
 
@@ -96,7 +96,7 @@ func TestStatusNotLinkedJSONBody(t *testing.T) {
 	registrar := linking.NewLinkTokenRegistrar(tokenStore, time.Minute, []byte("secret"))
 	api := NewAPI(registrar, linkStore, "secret", ratelimit.NoopLimiter{}, ratelimit.NoopLimiter{}, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/telegram/status", bytes.NewBufferString(`{"phone":"+15550001111"}`))
+	req := httptest.NewRequest(http.MethodGet, "/telegram/status", bytes.NewBufferString(`{"user_id":"user-1"}`))
 	req.Header.Set("Authorization", "Bearer secret")
 	recorder := httptest.NewRecorder()
 
@@ -120,13 +120,13 @@ func TestStatusLinked(t *testing.T) {
 	api := NewAPI(registrar, linkStore, "secret", ratelimit.NoopLimiter{}, ratelimit.NoopLimiter{}, nil)
 
 	_ = linkStore.LinkChat(context.Background(), linking.TelegramLink{
-		UserID:         "+15550001111",
-		Phone:          "+15550001111",
+		UserID:         "user-1",
+		Phone:          "",
 		TelegramChatID: 123,
 		VerifiedAt:     time.Now(),
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/telegram/status?phone=+15550001111", nil)
+	req := httptest.NewRequest(http.MethodGet, "/telegram/status?user_id=user-1", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	recorder := httptest.NewRecorder()
 

@@ -1,29 +1,32 @@
 # ProfZoom API
 
-Основной сервис является единым источником истины для авторизации. Он генерирует OTP, хранит только хэши, проверяет OTP, принимает решение об авторизации и выпускает JWT/refresh токены. Доставкой OTP занимается исключительно OTP_bot.
+Основной сервис — единый источник истины для авторизации. Он генерирует OTP, хранит только хэши, проверяет OTP, принимает решение об авторизации и выпускает JWT/refresh токены. Доставкой OTP занимается OTP_bot.
 
-## Процесс авторизации
+## Процесс авторизации (Telegram‑first)
 
-- `POST /auth/send-code` с `{ "phone": "+79991234567" }`
-  - Генерирует OTP и сохраняет хэш с TTL и оставшимся числом попыток.
-  - Проверяет привязку Telegram через OTP_bot.
-  - Если Telegram не привязан, регистрирует link-token и возвращает `need_link`.
-  - Отправляет OTP через OTP_bot.
-  - Ответ, когда нужна привязка: `{ "success": false, "need_link": true, "telegram_token": "<token>", "telegram_link": "https://t.me/ProfZoomOtpBot?start=<token>" }`
-- `POST /auth/verify-code` с `{ "phone": "+79991234567", "code": "123456" }`
-  - Проверяет хэш OTP и выдает access + refresh токены.
-  - Ответ: `{ "token": "<access_jwt>", "refresh_token": "<refresh>", "is_new_user": true }`
+1. Приложение вызывает `POST /auth/register` и получает:
+   - `user_id` — идентификатор пользователя (сохраните в приложении)
+   - `link_code` — код для привязки Telegram (показывается пользователю)
+2. Пользователь отправляет `link_code` боту. Бот привязывает чат к `user_id` и запрашивает OTP.
+3. Пользователь получает OTP в Telegram и вводит его в приложении.
+4. Приложение вызывает `POST /auth/verify-code` с `{ "user_id": "<uuid>", "code": "123456" }`.
+
+Повторный вход: пользователь пишет боту `/code`, получает OTP и подтверждает его через `/auth/verify-code`.
+
+## Внутренние эндпоинты для бота
+
+- `POST /auth/request-code` с `{ "telegram_id": 123456789 }`
+  - Заголовок авторизации: `X-Internal-Key: $OTP_BOT_INTERNAL_KEY`
+  - Ответ: `{ "code": "123456", "expires_at": "..." }`
+- `POST /auth/verify-code` с `{ "telegram_id": 123456789, "code": "123456" }`
 
 ## Интеграция с OTP_bot
 
-- `GET /telegram/status?phone=+79991234567` с заголовком `X-Internal-Key: $OTP_BOT_INTERNAL_KEY`
-  - 200 linked: `{ "linked": true }`
-  - 200 not linked: `{ "linked": false }`
-- `POST /telegram/link-token` с `{ "phone": "+79991234567", "token": "<token>" }`
+- `POST /telegram/link-token` с `{ "user_id": "<uuid>", "token": "<link_code>" }`
   - Заголовок авторизации: `X-Internal-Key: $OTP_BOT_INTERNAL_KEY`
-- `POST /otp/send` с `{ "phone": "+79991234567", "code": "123456" }`
+  - Регистрирует link‑код, который пользователь отправляет боту.
+- `GET /telegram/status?user_id=<uuid>` (опционально)
   - Заголовок авторизации: `X-Internal-Key: $OTP_BOT_INTERNAL_KEY`
-- Сервис не хранит Telegram `chat_id`; статус запрашивается на каждый запрос.
 
 ## Токены и сессии
 
@@ -54,4 +57,3 @@
 - `DB_CONN_MAX_IDLE` (по умолчанию `5m`)
 - `DB_CONN_MAX_LIFE` (по умолчанию `30m`)
 - `REQUEST_TIMEOUT` (по умолчанию `10s`)
-- `OTP_BOT_TELEGRAM_USERNAME` (username бота для генерации deep link)

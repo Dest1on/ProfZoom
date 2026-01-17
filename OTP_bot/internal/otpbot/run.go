@@ -32,6 +32,14 @@ func Run() error {
 	slog.SetDefault(logger)
 
 	telegramClient := telegram.NewClient(cfg.BotToken, &http.Client{Timeout: cfg.TelegramTimeout})
+	pollerClient := telegramClient
+	if cfg.TelegramPollingEnabled {
+		pollTimeout := cfg.TelegramPollingTimeout + 5*time.Second
+		if pollTimeout < cfg.TelegramTimeout {
+			pollTimeout = cfg.TelegramTimeout
+		}
+		pollerClient = telegram.NewClient(cfg.BotToken, &http.Client{Timeout: pollTimeout})
+	}
 	apiClient := profzom.NewClient(cfg.APIBaseURL, cfg.APIInternalKey, &http.Client{Timeout: cfg.APITimeout})
 
 	var db *sql.DB
@@ -58,6 +66,10 @@ func Run() error {
 	botLinkStore := linking.NewBotLinkStore(linkStore)
 	bot := telegram.NewBot(telegramClient, linker, botLinkStore, apiClient, logger)
 	webhookHandler := telegram.NewWebhookHandler(bot, cfg.WebhookSecret, logger)
+	var poller *telegram.Poller
+	if cfg.TelegramPollingEnabled {
+		poller = telegram.NewPoller(pollerClient, bot, logger, cfg.TelegramPollingTimeout, cfg.TelegramPollingInterval, cfg.TelegramPollingLimit, cfg.TelegramPollingDropPending, cfg.TelegramPollingDropWebhook)
+	}
 
 	otpPerChatLimiter := ratelimit.NewMemoryLimiter(cfg.OTPSendPerMin, time.Minute)
 	otpPerIPLimiter := ratelimit.NewMemoryLimiter(cfg.OTPSendIPPerMin, time.Minute)
@@ -97,6 +109,10 @@ func Run() error {
 			logger.Error("otp bot server error", slog.String("error", err.Error()))
 		}
 	}()
+	if poller != nil {
+		go poller.Run(ctx)
+		logger.Info("telegram polling enabled", slog.Duration("timeout", cfg.TelegramPollingTimeout))
+	}
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

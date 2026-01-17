@@ -21,12 +21,14 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 func (r *UserRepository) FindByPhone(ctx context.Context, phone string) (*user.User, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT id, phone, created_at, updated_at FROM users WHERE phone = $1`, phone)
 	var u user.User
-	if err := row.Scan(&u.ID, &u.Phone, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	var phoneValue sql.NullString
+	if err := row.Scan(&u.ID, &phoneValue, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, common.NewError(common.CodeNotFound, "user not found", err)
 		}
 		return nil, common.NewError(common.CodeInternal, "failed to load user", err)
 	}
+	u.Phone = phoneValue.String
 	roles, err := r.ListRoles(ctx, u.ID)
 	if err != nil {
 		return nil, err
@@ -38,12 +40,14 @@ func (r *UserRepository) FindByPhone(ctx context.Context, phone string) (*user.U
 func (r *UserRepository) GetByID(ctx context.Context, id common.UUID) (*user.User, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT id, phone, created_at, updated_at FROM users WHERE id = $1`, id)
 	var u user.User
-	if err := row.Scan(&u.ID, &u.Phone, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	var phoneValue sql.NullString
+	if err := row.Scan(&u.ID, &phoneValue, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, common.NewError(common.CodeNotFound, "user not found", err)
 		}
 		return nil, common.NewError(common.CodeInternal, "failed to load user", err)
 	}
+	u.Phone = phoneValue.String
 	roles, err := r.ListRoles(ctx, u.ID)
 	if err != nil {
 		return nil, err
@@ -55,7 +59,11 @@ func (r *UserRepository) GetByID(ctx context.Context, id common.UUID) (*user.Use
 func (r *UserRepository) Create(ctx context.Context, phone string) (*user.User, error) {
 	id := common.NewUUID()
 	now := time.Now().UTC()
-	_, err := r.db.ExecContext(ctx, `INSERT INTO users (id, phone, created_at, updated_at) VALUES ($1, $2, $3, $4)`, id, phone, now, now)
+	var phoneValue any = phone
+	if phone == "" {
+		phoneValue = nil
+	}
+	_, err := r.db.ExecContext(ctx, `INSERT INTO users (id, phone, created_at, updated_at) VALUES ($1, $2, $3, $4)`, id, phoneValue, now, now)
 	if err != nil {
 		return nil, common.NewError(common.CodeInternal, "failed to create user", err)
 	}

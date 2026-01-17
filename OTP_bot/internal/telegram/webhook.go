@@ -13,12 +13,11 @@ import (
 	"time"
 
 	"otp_bot/internal/observability"
-	"otp_bot/internal/phone"
 )
 
 const (
 	telegramSecretHeader = "X-Telegram-Bot-Api-Secret-Token"
-	verifyPrefix         = "verify_"
+	linkCodePrefix       = "PZ-"
 )
 
 var otpCodePattern = regexp.MustCompile(`^[0-9]{6}$`)
@@ -60,20 +59,25 @@ var ErrLinkNotFound = errors.New("telegram link not found")
 
 // VerificationService проверяет токен верификации и привязывает чат Telegram.
 type VerificationService interface {
-	VerifyAndLink(ctx context.Context, token string, chatID int64) (string, error)
+	VerifyAndLink(ctx context.Context, token string, chatID int64) (LinkResult, error)
 }
 
-// LinkInfo описывает связанную пару телефон-чат.
+// LinkResult описывает результат привязки чата.
+type LinkResult struct {
+	UserID string
+	Phone  string
+}
+
+// LinkInfo описывает связанную пару пользователь-чат.
 type LinkInfo struct {
+	UserID string
 	Phone  string
 	ChatID int64
 }
 
-// LinkStore управляет связями телефон-чат для бота.
+// LinkStore управляет связями пользователь-чат для бота.
 type LinkStore interface {
-	GetByPhone(ctx context.Context, phone string) (LinkInfo, error)
 	GetByChatID(ctx context.Context, chatID int64) (LinkInfo, error)
-	LinkChat(ctx context.Context, phone string, chatID int64) error
 }
 
 // Bot обрабатывает входящие обновления Telegram.
@@ -121,23 +125,28 @@ func (b *Bot) HandleUpdate(ctx context.Context, update Update) error {
 	if text == "" {
 		return nil
 	}
+	command, arg := parseCommand(text)
+	if strings.HasPrefix(command, "/") {
+		switch command {
+		case "/start":
+			return b.handleStart(ctx, msg, arg)
+		case "/help":
+			return b.sendHelp(ctx, msg.Chat.ID)
+		case "/status":
+			return b.handleStatus(ctx, msg.Chat.ID)
+		case "/code":
+			return b.handleCodeCommand(ctx, msg.Chat.ID, arg)
+		default:
+			return b.sendMessage(ctx, msg.Chat.ID, "I did not understand. Use /help.", nil)
+		}
+	}
+	if code, ok := normalizeLinkCode(text); ok {
+		return b.handleLinkCode(ctx, msg.Chat.ID, code)
+	}
 	if otpCodePattern.MatchString(text) {
 		return b.handleOTPVerification(ctx, msg.Chat.ID, text)
 	}
-
-	command, arg := parseCommand(text)
-	switch command {
-	case "/start":
-		return b.handleStart(ctx, msg, arg)
-	case "/help":
-		return b.sendHelp(ctx, msg.Chat.ID)
-	case "/status":
-		return b.handleStatus(ctx, msg.Chat.ID)
-	case "/code":
-		return b.handleCodeCommand(ctx, msg.Chat.ID, arg)
-	default:
-		return b.sendMessage(ctx, msg.Chat.ID, "I did not understand. Use /start or /help.", nil)
-	}
+	return b.sendMessage(ctx, msg.Chat.ID, "I did not understand. Send the link code from the app or use /help.", nil)
 }
 
 func parseCommand(text string) (string, string) {
@@ -156,37 +165,51 @@ func parseCommand(text string) (string, string) {
 	return command, arg
 }
 
-func (b *Bot) handleStart(ctx context.Context, message *Message, arg string) error {
-	token := strings.TrimSpace(arg)
-	if token == "" {
-		return b.handleStartWithoutToken(ctx, message.Chat.ID)
+func normalizeLinkCode(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", false
 	}
-	if strings.HasPrefix(token, verifyPrefix) {
-		token = strings.TrimPrefix(token, verifyPrefix)
+	upper := strings.ToUpper(trimmed)
+	if !strings.HasPrefix(upper, linkCodePrefix) {
+		return "", false
 	}
-	if token == "" {
-		return b.handleStartWithoutToken(ctx, message.Chat.ID)
+	if len(upper) <= len(linkCodePrefix) {
+		return "", false
 	}
+	return upper, true
+}
 
-	phoneNumber, err := b.verifier.VerifyAndLink(ctx, token, message.Chat.ID)
+func (b *Bot) handleStart(ctx context.Context, message *Message, arg string) error {
+	token, ok := normalizeLinkCode(arg)
+	if !ok {
+		return b.handleStartWithoutToken(ctx, message.Chat.ID)
+	}
+	return b.handleLinkCode(ctx, message.Chat.ID, token)
+}
+
+func (b *Bot) handleLinkCode(ctx context.Context, chatID int64, token string) error {
+	if b.verifier == nil {
+		return b.sendMessage(ctx, chatID, "Linking is unavailable right now.", nil)
+	}
+	result, err := b.verifier.VerifyAndLink(ctx, token, chatID)
 	if err != nil {
 		if errors.Is(err, ErrInvalidToken) {
-			b.logger.Info("invalid verification token", slog.Int64("chat_id", message.Chat.ID))
-			return b.sendMessage(ctx, message.Chat.ID, "Invalid or expired link. Please request a new one in the app.", b.contactKeyboard())
+			b.logger.Info("invalid verification token", slog.Int64("chat_id", chatID))
+			return b.sendMessage(ctx, chatID, "Invalid or expired link code. Please request a new one in the app.", nil)
 		}
-		b.logger.Error("verification failed", slog.Int64("chat_id", message.Chat.ID), slog.String("error", err.Error()))
+		b.logger.Error("verification failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		return fmt.Errorf("telegram verification failed: %w", err)
 	}
 
-	b.logger.Info("telegram linked", slog.Int64("chat_id", message.Chat.ID))
+	b.logger.Info("telegram linked", slog.Int64("chat_id", chatID), slog.String("user_id", result.UserID))
 	if b.otpClient != nil {
-		if otp, err := b.otpClient.RequestOTP(ctx, message.Chat.ID); err == nil {
-			msg := fmt.Sprintf("Phone %s linked. Your login code: %s. It expires in %s.", phoneNumber, otp.Code, formatOTPExpiry(otp.ExpiresAt))
-			return b.sendMessage(ctx, message.Chat.ID, msg, nil)
+		if otp, err := b.otpClient.RequestOTP(ctx, chatID); err == nil {
+			msg := fmt.Sprintf("Account linked. Your login code: %s. It expires in %s.", otp.Code, formatOTPExpiry(otp.ExpiresAt))
+			return b.sendMessage(ctx, chatID, msg, nil)
 		}
 	}
-	msg := fmt.Sprintf("Phone %s linked. Use /code to receive a login code.", phoneNumber)
-	return b.sendMessage(ctx, message.Chat.ID, msg, nil)
+	return b.sendMessage(ctx, chatID, "Account linked. Use /code to receive a login code.", nil)
 }
 
 func (b *Bot) handleStartWithoutToken(ctx context.Context, chatID int64) error {
@@ -208,16 +231,15 @@ func (b *Bot) handleStatus(ctx context.Context, chatID int64) error {
 		return b.sendMessage(ctx, chatID, "Link status is unavailable right now.", nil)
 	}
 
-	link, err := b.linkStore.GetByChatID(ctx, chatID)
+	_, err := b.linkStore.GetByChatID(ctx, chatID)
 	if err != nil {
 		if errors.Is(err, ErrLinkNotFound) {
-			return b.sendMessage(ctx, chatID, "Your Telegram is not linked yet. Use /start to link your phone.", b.contactKeyboard())
+			return b.sendMessage(ctx, chatID, "Your Telegram is not linked yet. Send the link code from the app.", nil)
 		}
 		return err
 	}
 
-	msg := fmt.Sprintf("Your Telegram is linked to %s.", link.Phone)
-	return b.sendMessage(ctx, chatID, msg, nil)
+	return b.sendMessage(ctx, chatID, "Your Telegram is linked.", nil)
 }
 
 func (b *Bot) handleCodeCommand(ctx context.Context, chatID int64, arg string) error {
@@ -259,7 +281,7 @@ func (b *Bot) handleOTPVerification(ctx context.Context, chatID int64, code stri
 func (b *Bot) handleOTPError(ctx context.Context, chatID int64, err error) error {
 	switch {
 	case errors.Is(err, ErrOTPNotLinked):
-		return b.sendMessage(ctx, chatID, "Your Telegram is not linked yet. Use /start to link your phone.", b.contactKeyboard())
+		return b.sendMessage(ctx, chatID, "Your Telegram is not linked yet. Send the link code from the app.", nil)
 	case errors.Is(err, ErrOTPRateLimited):
 		return b.sendMessage(ctx, chatID, "Too many requests. Please wait before trying again.", nil)
 	case errors.Is(err, ErrOTPInvalid):
@@ -275,61 +297,22 @@ func (b *Bot) handleOTPError(ctx context.Context, chatID int64, err error) error
 }
 
 func (b *Bot) handleContact(ctx context.Context, message *Message) error {
-	if b.linkStore == nil {
+	if message.Contact == nil {
 		return nil
 	}
-
-	contact := message.Contact
-	if contact == nil {
-		return nil
-	}
-	if contact.UserID != 0 && contact.UserID != message.From.ID {
-		return b.sendMessage(ctx, message.Chat.ID, "Please share your own phone number.", nil)
-	}
-
-	normalizedPhone := phone.Normalize(contact.PhoneNumber)
-	if normalizedPhone == "" {
-		return b.sendMessage(ctx, message.Chat.ID, "Unable to read the phone number. Please try again.", nil)
-	}
-
-	if link, err := b.linkStore.GetByPhone(ctx, normalizedPhone); err == nil {
-		if link.ChatID == message.Chat.ID {
-			msg := fmt.Sprintf("This phone is already linked to your Telegram account (%s).", normalizedPhone)
-			return b.sendMessage(ctx, message.Chat.ID, msg, nil)
-		}
-		return b.sendMessage(ctx, message.Chat.ID, "This phone is already linked to a different Telegram account. Please request a new link in the app.", nil)
-	} else if !errors.Is(err, ErrLinkNotFound) {
-		return err
-	}
-
-	if existing, err := b.linkStore.GetByChatID(ctx, message.Chat.ID); err == nil {
-		if existing.Phone != normalizedPhone {
-			msg := fmt.Sprintf("This Telegram account is already linked to %s. If you need to relink, request a new link in the app.", existing.Phone)
-			return b.sendMessage(ctx, message.Chat.ID, msg, nil)
-		}
-	} else if !errors.Is(err, ErrLinkNotFound) {
-		return err
-	}
-
-	if err := b.linkStore.LinkChat(ctx, normalizedPhone, message.Chat.ID); err != nil {
-		return err
-	}
-
-	msg := fmt.Sprintf("Phone %s linked. You can now receive codes here.", normalizedPhone)
-	return b.sendMessage(ctx, message.Chat.ID, msg, nil)
+	return b.sendMessage(ctx, message.Chat.ID, "Phone linking is no longer supported. Send the link code from the app.", nil)
 }
 
 func (b *Bot) sendStart(ctx context.Context, chatID int64) error {
 	text := "Hello! I deliver one-time codes for ProfZoom.\n" +
-		"To link your account, open the app and request a Telegram link.\n" +
-		"After linking, send /code to receive a login code.\n" +
-		"You can also share your phone number here using the button below."
-	return b.sendMessage(ctx, chatID, text, b.contactKeyboard())
+		"To link your account, open the app and get a link code.\n" +
+		"Send that code to me, then use /code to receive a login code."
+	return b.sendMessage(ctx, chatID, text, nil)
 }
 
 func (b *Bot) sendHelp(ctx context.Context, chatID int64) error {
-	text := "I send ProfZoom login codes. Use /start to link your phone, then send /code to receive a login code."
-	return b.sendMessage(ctx, chatID, text, b.contactKeyboard())
+	text := "I send ProfZoom login codes. Send the link code from the app, then use /code to receive a login code."
+	return b.sendMessage(ctx, chatID, text, nil)
 }
 
 func formatOTPExpiry(expiresAt time.Time) string {

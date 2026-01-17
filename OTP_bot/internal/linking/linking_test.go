@@ -16,16 +16,17 @@ func TestLinkTokenLifecycle(t *testing.T) {
 	linker := NewTelegramLinker(store, linkStore, []byte("secret"))
 
 	token := "token-123"
-	if _, err := registrar.Register(context.Background(), token, "+15550001111"); err != nil {
+	userID := "user-1"
+	if _, err := registrar.Register(context.Background(), userID, token, ""); err != nil {
 		t.Fatalf("register token: %v", err)
 	}
 
-	phone, err := linker.VerifyAndLink(context.Background(), token, 101)
+	result, err := linker.VerifyAndLink(context.Background(), token, 101)
 	if err != nil {
 		t.Fatalf("verify token: %v", err)
 	}
-	if phone != "+15550001111" {
-		t.Fatalf("unexpected phone: %s", phone)
+	if result.UserID != userID {
+		t.Fatalf("unexpected user_id: %s", result.UserID)
 	}
 
 	if _, err := linker.VerifyAndLink(context.Background(), token, 101); !errors.Is(err, telegram.ErrInvalidToken) {
@@ -42,7 +43,7 @@ func TestLinkTokenExpired(t *testing.T) {
 	linker.clock = func() time.Time { return time.Now().Add(2 * time.Minute) }
 
 	token := "token-123"
-	if _, err := registrar.Register(context.Background(), token, "+15550001111"); err != nil {
+	if _, err := registrar.Register(context.Background(), "user-1", token, ""); err != nil {
 		t.Fatalf("register token: %v", err)
 	}
 

@@ -60,17 +60,24 @@ func (a *API) HandleLinkToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		Phone string `json:"phone"`
-		Token string `json:"token"`
+		UserID string `json:"user_id"`
+		Phone  string `json:"phone"`
+		Token  string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_payload")
 		return
 	}
 
+	userID := strings.TrimSpace(payload.UserID)
+	rawPhone := strings.TrimSpace(payload.Phone)
 	normalizedPhone := phone.Normalize(payload.Phone)
 	token := strings.TrimSpace(payload.Token)
-	if normalizedPhone == "" || token == "" {
+	if userID == "" || token == "" {
+		writeError(w, http.StatusBadRequest, "invalid_payload")
+		return
+	}
+	if rawPhone != "" && normalizedPhone == "" {
 		writeError(w, http.StatusBadRequest, "invalid_payload")
 		return
 	}
@@ -84,7 +91,7 @@ func (a *API) HandleLinkToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := a.linkRegistrar.Register(r.Context(), token, normalizedPhone); err != nil {
+	if _, err := a.linkRegistrar.Register(r.Context(), userID, token, normalizedPhone); err != nil {
 		writeError(w, http.StatusInternalServerError, "link_token_failed")
 		return
 	}
@@ -218,10 +225,14 @@ func (a *API) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID := strings.TrimSpace(r.URL.Query().Get("user_id"))
+	chatIDParam := strings.TrimSpace(r.URL.Query().Get("chat_id"))
 	normalizedPhone := phone.Normalize(r.URL.Query().Get("phone"))
-	if normalizedPhone == "" {
+	if userID == "" && chatIDParam == "" && normalizedPhone == "" {
 		var payload struct {
-			Phone string `json:"phone"`
+			UserID string `json:"user_id"`
+			ChatID int64  `json:"chat_id"`
+			Phone  string `json:"phone"`
 		}
 		body := http.MaxBytesReader(w, r.Body, 1<<20)
 		defer body.Close()
@@ -229,14 +240,31 @@ func (a *API) HandleStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_payload")
 			return
 		}
-		normalizedPhone = phone.Normalize(payload.Phone)
-		if normalizedPhone == "" {
-			writeError(w, http.StatusBadRequest, "missing_phone")
+		userID = strings.TrimSpace(payload.UserID)
+		if userID == "" && payload.ChatID == 0 {
+			normalizedPhone = phone.Normalize(payload.Phone)
+		}
+		if userID == "" && payload.ChatID == 0 && normalizedPhone == "" {
+			writeError(w, http.StatusBadRequest, "missing_user_id")
 			return
 		}
+		chatIDParam = fmt.Sprintf("%d", payload.ChatID)
 	}
 
-	_, err := a.linkStore.GetByPhone(r.Context(), normalizedPhone)
+	var err error
+	switch {
+	case userID != "":
+		_, err = a.linkStore.GetByUserID(r.Context(), userID)
+	case chatIDParam != "":
+		chatID, parseErr := parseChatID(chatIDParam)
+		if parseErr != nil || chatID <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_chat_id")
+			return
+		}
+		_, err = a.linkStore.GetByChatID(r.Context(), chatID)
+	default:
+		_, err = a.linkStore.GetByPhone(r.Context(), normalizedPhone)
+	}
 	if err != nil {
 		if errors.Is(err, linking.ErrTelegramLinkNotFound) {
 			writeJSON(w, http.StatusOK, map[string]any{"linked": false})
@@ -247,6 +275,12 @@ func (a *API) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"linked": true})
+}
+
+func parseChatID(value string) (int64, error) {
+	var chatID int64
+	_, err := fmt.Sscan(value, &chatID)
+	return chatID, err
 }
 
 func (a *API) allowLinkToken(ip string) bool {

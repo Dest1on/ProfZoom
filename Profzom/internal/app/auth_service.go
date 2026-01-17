@@ -37,6 +37,8 @@ const (
 	otpMaxAttempts = 5
 	otpMinInterval = 30 * time.Second
 	otpCodeLength  = 6
+	linkCodePrefix = "PZ-"
+	linkCodeLength = 8
 )
 
 type Logger interface {
@@ -66,71 +68,33 @@ func NewAuthServiceWithTelegramLinks(users user.Repository, otp auth.OTPReposito
 	return service
 }
 
-type OTPRequestResult struct {
-	NeedLink      bool
-	TelegramToken string
+type RegistrationResult struct {
+	UserID   common.UUID
+	LinkCode string
 }
 
-func (s *AuthService) RequestOTP(ctx context.Context, phone string) (*OTPRequestResult, error) {
-	if err := s.otp.DeleteExpired(ctx, time.Now().UTC().Unix()); err != nil {
-		return nil, err
-	}
-	account, err := s.loadOrCreateUser(ctx, phone)
+func (s *AuthService) Register(ctx context.Context) (*RegistrationResult, error) {
+	account, err := s.users.Create(ctx, "")
 	if err != nil {
 		return nil, err
-	}
-	s.logInfo(fmt.Sprintf("otp request started user_id=%s", account.ID))
-	state, err := s.otp.GetState(ctx, phone)
-	if err != nil {
-		return nil, err
-	}
-	if state != nil {
-		requestedAt := time.Unix(state.RequestedAt, 0).UTC()
-		if time.Since(requestedAt) < otpMinInterval {
-			return nil, common.NewError(common.CodeValidation, "otp requested too frequently", nil)
-		}
 	}
 	if s.otpBot == nil {
 		return nil, common.NewError(common.CodeInternal, "otp bot client not configured", nil)
 	}
-	status, err := s.otpBot.GetTelegramStatus(ctx, phone)
+	code, err := generateLinkCode()
 	if err != nil {
-		return nil, s.handleOTPBotError(err, account.ID, "status")
+		return nil, common.NewError(common.CodeInternal, "failed to generate link code", err)
 	}
-	if !status.Linked {
-		result, linkErr := s.startTelegramLink(ctx, account.ID, phone)
-		if linkErr != nil {
-			return nil, linkErr
-		}
-		return result, nil
+	if err := s.otpBot.RegisterLinkToken(ctx, account.ID.String(), code); err != nil {
+		return nil, s.handleOTPBotError(err, account.ID, "link")
 	}
-	code, err := generateOTP()
-	if err != nil {
-		return nil, common.NewError(common.CodeInternal, "failed to generate otp", err)
-	}
-	expiresAt := time.Now().UTC().Add(s.otpTTL).Unix()
-	if err := s.otp.UpsertCode(ctx, phone, code, expiresAt, otpMaxAttempts); err != nil {
-		return nil, err
-	}
-	_ = s.analytics.Create(ctx, analytics.Event{Name: "auth.otp_requested", Payload: analyticsPayload(ctx, map[string]string{"phone": phone})})
-	if err := s.otpBot.SendOTP(ctx, phone, code); err != nil {
-		_ = s.otp.InvalidateCode(ctx, phone)
-		if errors.Is(err, otpbot.ErrNotLinked) {
-			result, linkErr := s.startTelegramLink(ctx, account.ID, phone)
-			if linkErr == nil {
-				return result, nil
-			}
-			return nil, linkErr
-		}
-		return nil, s.handleOTPBotError(err, account.ID, "send")
-	}
-	return nil, nil
+	_ = s.analytics.Create(ctx, analytics.Event{Name: "auth.telegram_link_requested", UserID: &account.ID, Payload: analyticsPayload(ctx, map[string]string{"user_id": account.ID.String()})})
+	return &RegistrationResult{UserID: account.ID, LinkCode: code}, nil
 }
 
 type OTPRequestPayload struct {
 	Code      string
 	ExpiresAt time.Time
-	Phone     string
 }
 
 func (s *AuthService) RequestOTPByTelegram(ctx context.Context, chatID int64) (*OTPRequestPayload, error) {
@@ -144,18 +108,23 @@ func (s *AuthService) RequestOTPByTelegram(ctx context.Context, chatID int64) (*
 		}
 		return nil, err
 	}
-	if link.Phone == "" {
+	userID := strings.TrimSpace(link.UserID)
+	if userID == "" {
 		return nil, common.NewError(common.CodeTelegramNotLinked, "telegram not linked", nil)
 	}
 	if err := s.otp.DeleteExpired(ctx, time.Now().UTC().Unix()); err != nil {
 		return nil, err
 	}
-	account, err := s.loadOrCreateUser(ctx, link.Phone)
+	parsedID, err := common.ParseUUID(userID)
+	if err != nil {
+		return nil, common.NewError(common.CodeValidation, "invalid user_id", err)
+	}
+	account, err := s.users.GetByID(ctx, parsedID)
 	if err != nil {
 		return nil, err
 	}
 	s.logInfo(fmt.Sprintf("otp request started user_id=%s", account.ID))
-	state, err := s.otp.GetState(ctx, link.Phone)
+	state, err := s.otp.GetState(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,27 +139,31 @@ func (s *AuthService) RequestOTPByTelegram(ctx context.Context, chatID int64) (*
 		return nil, common.NewError(common.CodeInternal, "failed to generate otp", err)
 	}
 	expiresAt := time.Now().UTC().Add(s.otpTTL)
-	if err := s.otp.UpsertCode(ctx, link.Phone, code, expiresAt.Unix(), otpMaxAttempts); err != nil {
+	if err := s.otp.UpsertCode(ctx, userID, code, expiresAt.Unix(), otpMaxAttempts); err != nil {
 		return nil, err
 	}
-	_ = s.analytics.Create(ctx, analytics.Event{Name: "auth.otp_requested", Payload: analyticsPayload(ctx, map[string]string{"phone": link.Phone})})
-	return &OTPRequestPayload{Code: code, ExpiresAt: expiresAt, Phone: link.Phone}, nil
+	_ = s.analytics.Create(ctx, analytics.Event{Name: "auth.otp_requested", UserID: &account.ID, Payload: analyticsPayload(ctx, map[string]string{"user_id": account.ID.String()})})
+	return &OTPRequestPayload{Code: code, ExpiresAt: expiresAt}, nil
 }
 
-func (s *AuthService) VerifyOTP(ctx context.Context, phone, code string) (*auth.TokenPair, *user.User, bool, error) {
-	ok, err := s.otp.VerifyCode(ctx, phone, code, time.Now().UTC().Unix())
+func (s *AuthService) VerifyOTP(ctx context.Context, userID, code string) (*auth.TokenPair, *user.User, bool, error) {
+	ok, err := s.otp.VerifyCode(ctx, userID, code, time.Now().UTC().Unix())
 	if err != nil {
 		return nil, nil, false, err
 	}
 	if !ok {
-		s.logInfo(fmt.Sprintf("otp verification failed phone=%s", maskPhone(phone)))
-		_ = s.analytics.Create(ctx, analytics.Event{Name: "auth.otp_failed", Payload: analyticsPayload(ctx, map[string]string{"phone": phone})})
+		s.logInfo(fmt.Sprintf("otp verification failed user_id=%s", userID))
+		_ = s.analytics.Create(ctx, analytics.Event{Name: "auth.otp_failed", Payload: analyticsPayload(ctx, map[string]string{"user_id": userID})})
 		return nil, nil, false, common.NewError(common.CodeUnauthorized, "invalid otp code", nil)
 	}
-	if err := s.otp.InvalidateCode(ctx, phone); err != nil {
+	if err := s.otp.InvalidateCode(ctx, userID); err != nil {
 		return nil, nil, false, err
 	}
-	account, err := s.users.FindByPhone(ctx, phone)
+	parsedID, err := common.ParseUUID(userID)
+	if err != nil {
+		return nil, nil, false, common.NewError(common.CodeValidation, "invalid user_id", err)
+	}
+	account, err := s.users.GetByID(ctx, parsedID)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -215,10 +188,11 @@ func (s *AuthService) VerifyOTPByTelegram(ctx context.Context, chatID int64, cod
 		}
 		return nil, nil, false, err
 	}
-	if link.Phone == "" {
+	userID := strings.TrimSpace(link.UserID)
+	if userID == "" {
 		return nil, nil, false, common.NewError(common.CodeTelegramNotLinked, "telegram not linked", nil)
 	}
-	return s.VerifyOTP(ctx, link.Phone, code)
+	return s.VerifyOTP(ctx, userID, code)
 }
 
 func (s *AuthService) Refresh(ctx context.Context, token string) (*auth.TokenPair, error) {
@@ -295,44 +269,18 @@ func generateRefreshToken() (string, error) {
 	return fmt.Sprintf("%x", b), nil
 }
 
-func generateTelegramLinkToken() (string, error) {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", b), nil
-}
-
-func maskPhone(phone string) string {
-	trimmed := strings.TrimSpace(phone)
-	if trimmed == "" {
-		return ""
-	}
-	prefix := ""
-	if strings.HasPrefix(trimmed, "+") {
-		prefix = "+"
-		trimmed = strings.TrimPrefix(trimmed, "+")
-	}
-	if len(trimmed) <= 4 {
-		return prefix + strings.Repeat("*", len(trimmed))
-	}
-	return prefix + strings.Repeat("*", len(trimmed)-4) + trimmed[len(trimmed)-4:]
-}
-
-func (s *AuthService) loadOrCreateUser(ctx context.Context, phone string) (*user.User, error) {
-	account, err := s.users.FindByPhone(ctx, phone)
-	if err != nil {
-		if common.Is(err, common.CodeNotFound) {
-			account, err = s.users.Create(ctx, phone)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
+func generateLinkCode() (string, error) {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	max := big.NewInt(int64(len(alphabet)))
+	code := make([]byte, linkCodeLength)
+	for i := range code {
+		value, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
 		}
+		code[i] = alphabet[value.Int64()]
 	}
-	return account, nil
+	return linkCodePrefix + string(code), nil
 }
 
 func (s *AuthService) logInfo(msg string) {
@@ -347,18 +295,6 @@ func (s *AuthService) logError(msg string) {
 		return
 	}
 	s.logger.Error(msg)
-}
-
-func (s *AuthService) startTelegramLink(ctx context.Context, userID common.UUID, phone string) (*OTPRequestResult, error) {
-	token, err := generateTelegramLinkToken()
-	if err != nil {
-		return nil, common.NewError(common.CodeInternal, "failed to generate telegram link token", err)
-	}
-	if err := s.otpBot.RegisterLinkToken(ctx, phone, token); err != nil {
-		return nil, s.handleOTPBotError(err, userID, "link")
-	}
-	_ = s.analytics.Create(ctx, analytics.Event{Name: "auth.telegram_link_requested", Payload: analyticsPayload(ctx, map[string]string{"phone": phone})})
-	return &OTPRequestResult{NeedLink: true, TelegramToken: token}, nil
 }
 
 func (s *AuthService) handleOTPBotError(err error, userID common.UUID, stage string) error {

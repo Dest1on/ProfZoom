@@ -13,7 +13,7 @@ import (
 
 type Client interface {
 	GetTelegramStatus(ctx context.Context, phone string) (Status, error)
-	RegisterLinkToken(ctx context.Context, phone, token string) error
+	RegisterLinkToken(ctx context.Context, userID, token string) error
 	SendOTP(ctx context.Context, phone, otpCode string) error
 }
 
@@ -76,19 +76,19 @@ func (c *HTTPClient) GetTelegramStatus(ctx context.Context, phone string) (Statu
 	return status, nil
 }
 
-func (c *HTTPClient) RegisterLinkToken(ctx context.Context, phone, token string) error {
-	if phone == "" {
-		return fmt.Errorf("%w: phone is required", ErrDeliveryFailed)
+func (c *HTTPClient) RegisterLinkToken(ctx context.Context, userID, token string) error {
+	if userID == "" {
+		return fmt.Errorf("%w: user_id is required", ErrDeliveryFailed)
 	}
 	if token == "" {
 		return fmt.Errorf("%w: token is required", ErrDeliveryFailed)
 	}
 	payload := struct {
-		Phone string `json:"phone"`
-		Token string `json:"token"`
+		UserID string `json:"user_id"`
+		Token  string `json:"token"`
 	}{
-		Phone: phone,
-		Token: token,
+		UserID: userID,
+		Token:  token,
 	}
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(payload); err != nil {

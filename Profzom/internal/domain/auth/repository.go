@@ -7,15 +7,15 @@ import (
 )
 
 type OTPRepository interface {
-	UpsertCode(ctx context.Context, phone, code string, expiresAtUnix int64, attemptsLeft int) error
-	VerifyCode(ctx context.Context, phone, code string, nowUnix int64) (bool, error)
-	GetState(ctx context.Context, phone string) (*OTPState, error)
-	InvalidateCode(ctx context.Context, phone string) error
+	UpsertCode(ctx context.Context, userID, code string, expiresAtUnix int64, attemptsLeft int) error
+	VerifyCode(ctx context.Context, userID, code string, nowUnix int64) (bool, error)
+	GetState(ctx context.Context, userID string) (*OTPState, error)
+	InvalidateCode(ctx context.Context, userID string) error
 	DeleteExpired(ctx context.Context, beforeUnix int64) error
 }
 
 type OTPState struct {
-	Phone        string
+	UserID       string
 	AttemptsLeft int
 	ExpiresAt    int64
 	RequestedAt  int64

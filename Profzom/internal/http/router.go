@@ -54,8 +54,8 @@ func (r *Router) baseHandler() http.Handler {
 		case req.Method == http.MethodPost && path == "/auth/request-code":
 			r.deps.AuthHandler.RequestOTPByTelegram(w, req)
 			return
-		case req.Method == http.MethodPost && path == "/auth/send-code":
-			r.deps.AuthHandler.RequestOTP(w, req)
+		case req.Method == http.MethodPost && path == "/auth/register":
+			r.deps.AuthHandler.Register(w, req)
 			return
 		case req.Method == http.MethodPost && path == "/auth/verify-code":
 			r.deps.AuthHandler.VerifyOTP(w, req)

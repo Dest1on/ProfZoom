@@ -15,4 +15,5 @@ type Link struct {
 type LinkRepository interface {
 	GetByChatID(ctx context.Context, chatID int64) (*Link, error)
 	GetByPhone(ctx context.Context, phone string) (*Link, error)
+	GetByUserID(ctx context.Context, userID string) (*Link, error)
 }

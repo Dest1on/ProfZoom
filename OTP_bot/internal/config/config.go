@@ -20,6 +20,12 @@ type Config struct {
 	Port                        string
 	LogLevel                    string
 	TelegramTimeout             time.Duration
+	TelegramPollingEnabled      bool
+	TelegramPollingTimeout      time.Duration
+	TelegramPollingInterval     time.Duration
+	TelegramPollingLimit        int
+	TelegramPollingDropPending  bool
+	TelegramPollingDropWebhook  bool
 	APITimeout                  time.Duration
 	OTPSendPerMin               int
 	OTPSendIPPerMin             int
@@ -35,11 +41,18 @@ func Load() (Config, error) {
 	otpPerMin := intOr("OTP_RATE_LIMIT_PER_MIN", 2)
 	otpBotPerMin := intOr("OTP_RATE_LIMIT_BOT_PER_MIN", 60)
 	linkTokenPerMin := intOr("LINK_TOKEN_RATE_LIMIT_PER_MIN", 5)
+	pollingEnabled := boolOr("TELEGRAM_POLLING_ENABLED", false)
 
 	cfg := Config{
 		Port:                        envOr("PORT", "8080"),
 		LogLevel:                    envOr("LOG_LEVEL", "info"),
 		TelegramTimeout:             durationOr("TELEGRAM_TIMEOUT", 5*time.Second),
+		TelegramPollingEnabled:      pollingEnabled,
+		TelegramPollingTimeout:      durationOr("TELEGRAM_POLLING_TIMEOUT", 25*time.Second),
+		TelegramPollingInterval:     durationOr("TELEGRAM_POLLING_INTERVAL", time.Second),
+		TelegramPollingLimit:        intOr("TELEGRAM_POLLING_LIMIT", 50),
+		TelegramPollingDropPending:  boolOr("TELEGRAM_POLLING_DROP_PENDING", true),
+		TelegramPollingDropWebhook:  boolOr("TELEGRAM_POLLING_DROP_WEBHOOK", true),
 		APITimeout:                  durationOr("API_TIMEOUT", 5*time.Second),
 		OTPSendPerMin:               otpPerMin,
 		OTPSendIPPerMin:             intOr("OTP_RATE_LIMIT_IP_PER_MIN", otpPerMin),
@@ -140,4 +153,19 @@ func intOr(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func boolOr(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }

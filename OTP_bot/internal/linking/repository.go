@@ -40,7 +40,11 @@ func (s *MemoryLinkTokenStore) Save(_ context.Context, token LinkToken) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, stored := range s.tokens {
-		if stored.Phone == token.Phone {
+		if token.UserID != "" && stored.UserID == token.UserID {
+			delete(s.tokens, key)
+			continue
+		}
+		if token.Phone != "" && stored.Phone == token.Phone {
 			delete(s.tokens, key)
 		}
 	}
@@ -101,6 +105,9 @@ func NewMemoryTelegramLinkStore() *MemoryTelegramLinkStore {
 func (s *MemoryTelegramLinkStore) GetByPhone(_ context.Context, phone string) (TelegramLink, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if phone == "" {
+		return TelegramLink{}, ErrTelegramLinkNotFound
+	}
 	link, ok := s.links[phone]
 	if !ok {
 		return TelegramLink{}, ErrTelegramLinkNotFound
@@ -132,18 +139,26 @@ func (s *MemoryTelegramLinkStore) LinkChat(_ context.Context, link TelegramLink)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existing, ok := s.users[link.UserID]; ok {
-		delete(s.links, existing.Phone)
+		if existing.Phone != "" {
+			delete(s.links, existing.Phone)
+		}
 		delete(s.chats, existing.TelegramChatID)
 	}
-	if existing, ok := s.links[link.Phone]; ok {
-		delete(s.chats, existing.TelegramChatID)
-		delete(s.users, existing.UserID)
+	if link.Phone != "" {
+		if existing, ok := s.links[link.Phone]; ok {
+			delete(s.chats, existing.TelegramChatID)
+			delete(s.users, existing.UserID)
+		}
 	}
 	if existing, ok := s.chats[link.TelegramChatID]; ok {
-		delete(s.links, existing.Phone)
+		if existing.Phone != "" {
+			delete(s.links, existing.Phone)
+		}
 		delete(s.users, existing.UserID)
 	}
-	s.links[link.Phone] = link
+	if link.Phone != "" {
+		s.links[link.Phone] = link
+	}
 	s.users[link.UserID] = link
 	s.chats[link.TelegramChatID] = link
 	return nil

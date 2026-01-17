@@ -57,7 +57,7 @@ func main() {
 	messageService := app.NewMessageService(messageRepo, applicationRepo, vacancyRepo, analyticsRepo)
 
 	rateLimiter := httpmw.NewRateLimiter()
-	authHandler := handlers.NewAuthHandler(authService, rateLimiter, cfg.OTPBotTelegramUsername, cfg.OTPBotInternalKey)
+	authHandler := handlers.NewAuthHandler(authService, rateLimiter, cfg.OTPBotInternalKey)
 	userHandler := handlers.NewUserHandler(userService)
 	profileHandler := handlers.NewProfileHandler(profileService)
 	vacancyHandler := handlers.NewVacancyHandler(vacancyService)

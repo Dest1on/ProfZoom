@@ -16,22 +16,22 @@ import (
 )
 
 type AuthHandler struct {
-	auth                *app.AuthService
-	limiter             *middleware.RateLimiter
-	telegramBotUsername string
-	internalKey         string
+	auth        *app.AuthService
+	limiter     *middleware.RateLimiter
+	internalKey string
 }
 
-func NewAuthHandler(auth *app.AuthService, limiter *middleware.RateLimiter, telegramBotUsername, internalKey string) *AuthHandler {
-	return &AuthHandler{auth: auth, limiter: limiter, telegramBotUsername: telegramBotUsername, internalKey: internalKey}
+func NewAuthHandler(auth *app.AuthService, limiter *middleware.RateLimiter, internalKey string) *AuthHandler {
+	return &AuthHandler{auth: auth, limiter: limiter, internalKey: internalKey}
 }
 
-type requestOTPRequest struct {
-	Phone string `json:"phone"`
+type registerResponse struct {
+	UserID   string `json:"user_id"`
+	LinkCode string `json:"link_code"`
 }
 
 type verifyOTPRequest struct {
-	Phone      string          `json:"phone"`
+	UserID     string          `json:"user_id"`
 	TelegramID int64           `json:"telegram_id,omitempty"`
 	Code       string          `json:"code"`
 	Role       json.RawMessage `json:"role,omitempty"`
@@ -46,13 +46,6 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-type requestOTPResponse struct {
-	Success       bool   `json:"success"`
-	NeedLink      bool   `json:"need_link,omitempty"`
-	TelegramToken string `json:"telegram_token,omitempty"`
-	TelegramLink  string `json:"telegram_link,omitempty"`
-}
-
 type requestOTPByTelegramRequest struct {
 	TelegramID int64 `json:"telegram_id"`
 }
@@ -62,58 +55,15 @@ type requestOTPByTelegramResponse struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
-var (
-	phonePattern = regexp.MustCompile(`^\+[0-9]{7,15}$`)
-	otpPattern   = regexp.MustCompile(`^[0-9]{6}$`)
-)
+var otpPattern = regexp.MustCompile(`^[0-9]{6}$`)
 
-func (h *AuthHandler) RequestOTP(w http.ResponseWriter, r *http.Request) {
-	var req requestOTPRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.Error(w, err)
-		return
-	}
-	phone := strings.TrimSpace(req.Phone)
-	fields := map[string]string{}
-	if phone == "" {
-		fields["phone"] = "phone is required"
-	} else if !phonePattern.MatchString(phone) {
-		fields["phone"] = "invalid phone format"
-	}
-	if len(fields) > 0 {
-		response.Error(w, common.NewValidationError("invalid request", fields))
-		return
-	}
-	if h.limiter != nil {
-		ipKey := "otp:ip:" + middleware.ClientIP(r)
-		if !h.limiter.Allow(ipKey, 5, time.Minute) {
-			response.Error(w, common.NewError(common.CodeRateLimited, "otp rate limit exceeded", nil))
-			return
-		}
-		phoneKey := "otp:phone:" + phone
-		if !h.limiter.Allow(phoneKey, 3, time.Minute) {
-			response.Error(w, common.NewError(common.CodeRateLimited, "otp rate limit exceeded", nil))
-			return
-		}
-	}
-	result, err := h.auth.RequestOTP(r.Context(), phone)
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	result, err := h.auth.Register(r.Context())
 	if err != nil {
 		response.Error(w, err)
 		return
 	}
-	if result != nil && result.NeedLink {
-		resp := requestOTPResponse{
-			Success:       false,
-			NeedLink:      true,
-			TelegramToken: result.TelegramToken,
-		}
-		if link := buildTelegramLink(h.telegramBotUsername, result.TelegramToken); link != "" {
-			resp.TelegramLink = link
-		}
-		response.JSON(w, http.StatusOK, resp)
-		return
-	}
-	response.JSON(w, http.StatusOK, requestOTPResponse{Success: true})
+	response.JSON(w, http.StatusOK, registerResponse{UserID: result.UserID.String(), LinkCode: result.LinkCode})
 }
 
 func (h *AuthHandler) RequestOTPByTelegram(w http.ResponseWriter, r *http.Request) {
@@ -155,23 +105,25 @@ func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, err)
 		return
 	}
-	phone := strings.TrimSpace(req.Phone)
+	userID := strings.TrimSpace(req.UserID)
 	telegramID := req.TelegramID
 	code := strings.TrimSpace(req.Code)
 	fields := map[string]string{}
 	if len(req.Role) > 0 {
 		fields["role"] = "role is not allowed"
 	}
-	if phone != "" && telegramID != 0 {
-		fields["phone"] = "phone is not allowed when telegram_id is provided"
-		fields["telegram_id"] = "telegram_id is not allowed when phone is provided"
+	if userID != "" && telegramID != 0 {
+		fields["user_id"] = "user_id is not allowed when telegram_id is provided"
+		fields["telegram_id"] = "telegram_id is not allowed when user_id is provided"
 	}
-	if phone == "" && telegramID == 0 {
-		fields["phone"] = "phone is required"
+	if userID == "" && telegramID == 0 {
+		fields["user_id"] = "user_id is required"
 		fields["telegram_id"] = "telegram_id is required"
 	}
-	if phone != "" && !phonePattern.MatchString(phone) {
-		fields["phone"] = "invalid phone format"
+	if userID != "" {
+		if _, err := common.ParseUUID(userID); err != nil {
+			fields["user_id"] = "invalid user_id"
+		}
 	}
 	if telegramID < 0 {
 		fields["telegram_id"] = "invalid telegram_id"
@@ -198,8 +150,8 @@ func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			phoneKey := "otp-verify:phone:" + phone
-			if !h.limiter.Allow(phoneKey, 5, time.Minute) {
+			userKey := "otp-verify:user:" + userID
+			if !h.limiter.Allow(userKey, 5, time.Minute) {
 				response.Error(w, common.NewError(common.CodeRateLimited, "otp rate limit exceeded", nil))
 				return
 			}
@@ -213,7 +165,7 @@ func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	if telegramID != 0 {
 		pair, _, isNewUser, err = h.auth.VerifyOTPByTelegram(r.Context(), telegramID, code)
 	} else {
-		pair, _, isNewUser, err = h.auth.VerifyOTP(r.Context(), phone, code)
+		pair, _, isNewUser, err = h.auth.VerifyOTP(r.Context(), userID, code)
 	}
 	if err != nil {
 		response.Error(w, err)
@@ -247,15 +199,4 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
-}
-
-func buildTelegramLink(username, token string) string {
-	if username == "" || token == "" {
-		return ""
-	}
-	trimmed := strings.TrimPrefix(strings.TrimSpace(username), "@")
-	if trimmed == "" {
-		return ""
-	}
-	return "https://t.me/" + trimmed + "?start=" + token
 }

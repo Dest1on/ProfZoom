@@ -93,6 +93,9 @@ func (s *LinkTokenIssuer) Issue(ctx context.Context, userID, phone string) (stri
 	if s.limiter != nil && !s.limiter.Allow(userID) {
 		return "", time.Time{}, ErrRateLimited
 	}
+	if userID == "" {
+		return "", time.Time{}, errors.New("user_id required")
+	}
 	if len(s.hashSecret) == 0 {
 		return "", time.Time{}, errors.New("hash secret required")
 	}
@@ -133,10 +136,10 @@ func NewLinkTokenRegistrar(store LinkTokenStore, ttl time.Duration, hashSecret [
 	}
 }
 
-// Register сохраняет одноразовый токен для номера телефона.
-func (r *LinkTokenRegistrar) Register(ctx context.Context, token, phone string) (time.Time, error) {
-	if token == "" || phone == "" {
-		return time.Time{}, errors.New("token and phone required")
+// Register сохраняет одноразовый токен, выданный основным бэкендом.
+func (r *LinkTokenRegistrar) Register(ctx context.Context, userID, token, phone string) (time.Time, error) {
+	if token == "" || userID == "" {
+		return time.Time{}, errors.New("token and user_id required")
 	}
 	if len(r.hashSecret) == 0 {
 		return time.Time{}, errors.New("hash secret required")
@@ -144,7 +147,7 @@ func (r *LinkTokenRegistrar) Register(ctx context.Context, token, phone string) 
 	expiresAt := r.clock().Add(r.ttl)
 	record := LinkToken{
 		TokenHash: hashToken(token, r.hashSecret),
-		UserID:    phone,
+		UserID:    userID,
 		Phone:     phone,
 		ExpiresAt: expiresAt,
 	}
@@ -177,19 +180,19 @@ func NewTelegramLinker(store LinkTokenStore, linkStore TelegramLinkStore, hashSe
 }
 
 // VerifyAndLink проверяет токен и привязывает ID чата.
-func (l *TelegramLinker) VerifyAndLink(ctx context.Context, token string, chatID int64) (string, error) {
+func (l *TelegramLinker) VerifyAndLink(ctx context.Context, token string, chatID int64) (telegram.LinkResult, error) {
 	if token == "" {
-		return "", telegram.ErrInvalidToken
+		return telegram.LinkResult{}, telegram.ErrInvalidToken
 	}
 	stored, err := l.store.Consume(ctx, hashToken(token, l.hashSecret))
 	if err != nil {
 		if errors.Is(err, ErrLinkTokenNotFound) {
-			return "", telegram.ErrInvalidToken
+			return telegram.LinkResult{}, telegram.ErrInvalidToken
 		}
-		return "", err
+		return telegram.LinkResult{}, err
 	}
 	if l.verifyTime && l.clock().After(stored.ExpiresAt.Add(l.maxSkew)) {
-		return "", telegram.ErrInvalidToken
+		return telegram.LinkResult{}, telegram.ErrInvalidToken
 	}
 
 	link := TelegramLink{
@@ -199,10 +202,10 @@ func (l *TelegramLinker) VerifyAndLink(ctx context.Context, token string, chatID
 		VerifiedAt:     l.clock(),
 	}
 	if err := l.linkStore.LinkChat(ctx, link); err != nil {
-		return "", err
+		return telegram.LinkResult{}, err
 	}
 
-	return stored.Phone, nil
+	return telegram.LinkResult{UserID: stored.UserID, Phone: stored.Phone}, nil
 }
 
 func hashToken(token string, secret []byte) []byte {

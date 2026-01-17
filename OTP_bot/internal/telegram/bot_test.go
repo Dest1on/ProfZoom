@@ -21,12 +21,12 @@ func (f *fakeSender) SendMessage(ctx context.Context, chatID int64, text string)
 }
 
 type fakeVerifier struct {
-	phone string
-	err   error
+	result LinkResult
+	err    error
 }
 
-func (f fakeVerifier) VerifyAndLink(ctx context.Context, token string, chatID int64) (string, error) {
-	return f.phone, f.err
+func (f fakeVerifier) VerifyAndLink(ctx context.Context, token string, chatID int64) (LinkResult, error) {
+	return f.result, f.err
 }
 
 type fakeOTPClient struct {
@@ -51,10 +51,10 @@ func (f *fakeOTPClient) VerifyOTP(ctx context.Context, chatID int64, code string
 
 func TestBotHandleStartSuccess(t *testing.T) {
 	sender := &fakeSender{}
-	verifier := fakeVerifier{phone: "+15550001111"}
+	verifier := fakeVerifier{result: LinkResult{UserID: "user-1"}}
 	bot := NewBot(sender, verifier, nil, nil, slog.Default())
 
-	update := Update{Message: &Message{Chat: Chat{ID: 42, Type: "private"}, Text: "/start token"}}
+	update := Update{Message: &Message{Chat: Chat{ID: 42, Type: "private"}, Text: "/start PZ-ABC12345"}}
 	if err := bot.HandleUpdate(context.Background(), update); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestBotHandleStartInvalidToken(t *testing.T) {
 	verifier := fakeVerifier{err: ErrInvalidToken}
 	bot := NewBot(sender, verifier, nil, nil, slog.Default())
 
-	update := Update{Message: &Message{Chat: Chat{ID: 99, Type: "private"}, Text: "/start token"}}
+	update := Update{Message: &Message{Chat: Chat{ID: 99, Type: "private"}, Text: "/start PZ-INVALID"}}
 	if err := bot.HandleUpdate(context.Background(), update); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestBotHandleStartBackendError(t *testing.T) {
 	verifier := fakeVerifier{err: errors.New("backend down")}
 	bot := NewBot(sender, verifier, nil, nil, slog.Default())
 
-	update := Update{Message: &Message{Chat: Chat{ID: 7, Type: "private"}, Text: "/start token"}}
+	update := Update{Message: &Message{Chat: Chat{ID: 7, Type: "private"}, Text: "/start PZ-ABC12345"}}
 	if err := bot.HandleUpdate(context.Background(), update); err == nil {
 		t.Fatalf("expected error")
 	}

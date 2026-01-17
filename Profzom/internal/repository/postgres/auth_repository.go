@@ -20,21 +20,21 @@ func NewOTPRepository(db *sql.DB) *OTPRepository {
 	return &OTPRepository{db: db}
 }
 
-func (r *OTPRepository) UpsertCode(ctx context.Context, phone, code string, expiresAtUnix int64, attemptsLeft int) error {
+func (r *OTPRepository) UpsertCode(ctx context.Context, userID, code string, expiresAtUnix int64, attemptsLeft int) error {
 	codeHash := hashOTP(code)
 	now := time.Now().UTC()
-	_, err := r.db.ExecContext(ctx, `INSERT INTO otp_codes (phone, code_hash, expires_at, created_at, attempts, requested_at)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO otp_codes (user_id, code_hash, expires_at, created_at, attempts, requested_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (phone) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, created_at = EXCLUDED.created_at, attempts = EXCLUDED.attempts, requested_at = EXCLUDED.requested_at`,
-		phone, codeHash, time.Unix(expiresAtUnix, 0).UTC(), now, attemptsLeft, now)
+		ON CONFLICT (user_id) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, created_at = EXCLUDED.created_at, attempts = EXCLUDED.attempts, requested_at = EXCLUDED.requested_at`,
+		userID, codeHash, time.Unix(expiresAtUnix, 0).UTC(), now, attemptsLeft, now)
 	if err != nil {
 		return common.NewError(common.CodeInternal, "failed to store otp", err)
 	}
 	return nil
 }
 
-func (r *OTPRepository) VerifyCode(ctx context.Context, phone, code string, nowUnix int64) (bool, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT code_hash, expires_at, attempts FROM otp_codes WHERE phone = $1`, phone)
+func (r *OTPRepository) VerifyCode(ctx context.Context, userID, code string, nowUnix int64) (bool, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT code_hash, expires_at, attempts FROM otp_codes WHERE user_id = $1`, userID)
 	var storedHash string
 	var expiresAt time.Time
 	var attemptsLeft int
@@ -45,13 +45,13 @@ func (r *OTPRepository) VerifyCode(ctx context.Context, phone, code string, nowU
 		return false, common.NewError(common.CodeInternal, "failed to load otp", err)
 	}
 	if attemptsLeft <= 0 {
-		if err := r.InvalidateCode(ctx, phone); err != nil {
+		if err := r.InvalidateCode(ctx, userID); err != nil {
 			return false, err
 		}
 		return false, nil
 	}
 	if expiresAt.Before(time.Unix(nowUnix, 0).UTC()) {
-		if err := r.InvalidateCode(ctx, phone); err != nil {
+		if err := r.InvalidateCode(ctx, userID); err != nil {
 			return false, err
 		}
 		return false, nil
@@ -59,12 +59,12 @@ func (r *OTPRepository) VerifyCode(ctx context.Context, phone, code string, nowU
 	if storedHash != hashOTP(code) {
 		attemptsLeft--
 		if attemptsLeft <= 0 {
-			if err := r.InvalidateCode(ctx, phone); err != nil {
+			if err := r.InvalidateCode(ctx, userID); err != nil {
 				return false, err
 			}
 			return false, nil
 		}
-		_, err := r.db.ExecContext(ctx, `UPDATE otp_codes SET attempts = $1 WHERE phone = $2`, attemptsLeft, phone)
+		_, err := r.db.ExecContext(ctx, `UPDATE otp_codes SET attempts = $1 WHERE user_id = $2`, attemptsLeft, userID)
 		if err != nil {
 			return false, common.NewError(common.CodeInternal, "failed to update otp attempts", err)
 		}
@@ -73,12 +73,12 @@ func (r *OTPRepository) VerifyCode(ctx context.Context, phone, code string, nowU
 	return true, nil
 }
 
-func (r *OTPRepository) GetState(ctx context.Context, phone string) (*auth.OTPState, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT phone, attempts, expires_at, requested_at FROM otp_codes WHERE phone = $1`, phone)
+func (r *OTPRepository) GetState(ctx context.Context, userID string) (*auth.OTPState, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT user_id, attempts, expires_at, requested_at FROM otp_codes WHERE user_id = $1`, userID)
 	var state auth.OTPState
 	var expiresAt time.Time
 	var requestedAt time.Time
-	if err := row.Scan(&state.Phone, &state.AttemptsLeft, &expiresAt, &requestedAt); err != nil {
+	if err := row.Scan(&state.UserID, &state.AttemptsLeft, &expiresAt, &requestedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -89,8 +89,8 @@ func (r *OTPRepository) GetState(ctx context.Context, phone string) (*auth.OTPSt
 	return &state, nil
 }
 
-func (r *OTPRepository) InvalidateCode(ctx context.Context, phone string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM otp_codes WHERE phone = $1`, phone)
+func (r *OTPRepository) InvalidateCode(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM otp_codes WHERE user_id = $1`, userID)
 	if err != nil {
 		return common.NewError(common.CodeInternal, "failed to invalidate otp", err)
 	}

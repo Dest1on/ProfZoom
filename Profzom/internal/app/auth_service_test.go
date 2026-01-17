@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,10 +35,10 @@ func newFakeOTPRepo() *fakeOTPRepo {
 	return &fakeOTPRepo{entries: make(map[string]*otpEntry)}
 }
 
-func (r *fakeOTPRepo) UpsertCode(ctx context.Context, phone, code string, expiresAtUnix int64, attemptsLeft int) error {
+func (r *fakeOTPRepo) UpsertCode(ctx context.Context, userID, code string, expiresAtUnix int64, attemptsLeft int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.entries[phone] = &otpEntry{
+	r.entries[userID] = &otpEntry{
 		hash:         hashOTP(code),
 		expiresAt:    expiresAtUnix,
 		attemptsLeft: attemptsLeft,
@@ -46,59 +47,59 @@ func (r *fakeOTPRepo) UpsertCode(ctx context.Context, phone, code string, expire
 	return nil
 }
 
-func (r *fakeOTPRepo) VerifyCode(ctx context.Context, phone, code string, nowUnix int64) (bool, error) {
+func (r *fakeOTPRepo) VerifyCode(ctx context.Context, userID, code string, nowUnix int64) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	entry := r.entries[phone]
+	entry := r.entries[userID]
 	if entry == nil {
 		return false, nil
 	}
 	if entry.attemptsLeft <= 0 {
-		delete(r.entries, phone)
+		delete(r.entries, userID)
 		return false, nil
 	}
 	if entry.expiresAt <= nowUnix {
-		delete(r.entries, phone)
+		delete(r.entries, userID)
 		return false, nil
 	}
 	if entry.hash != hashOTP(code) {
 		entry.attemptsLeft--
 		if entry.attemptsLeft <= 0 {
-			delete(r.entries, phone)
+			delete(r.entries, userID)
 		}
 		return false, nil
 	}
 	return true, nil
 }
 
-func (r *fakeOTPRepo) GetState(ctx context.Context, phone string) (*auth.OTPState, error) {
+func (r *fakeOTPRepo) GetState(ctx context.Context, userID string) (*auth.OTPState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	entry := r.entries[phone]
+	entry := r.entries[userID]
 	if entry == nil {
 		return nil, nil
 	}
 	return &auth.OTPState{
-		Phone:        phone,
+		UserID:       userID,
 		AttemptsLeft: entry.attemptsLeft,
 		ExpiresAt:    entry.expiresAt,
 		RequestedAt:  entry.requestedAt,
 	}, nil
 }
 
-func (r *fakeOTPRepo) InvalidateCode(ctx context.Context, phone string) error {
+func (r *fakeOTPRepo) InvalidateCode(ctx context.Context, userID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.entries, phone)
+	delete(r.entries, userID)
 	return nil
 }
 
 func (r *fakeOTPRepo) DeleteExpired(ctx context.Context, beforeUnix int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for phone, entry := range r.entries {
+	for userID, entry := range r.entries {
 		if entry.expiresAt <= beforeUnix {
-			delete(r.entries, phone)
+			delete(r.entries, userID)
 		}
 	}
 	return nil
@@ -143,7 +144,9 @@ func (r *fakeUserRepo) Create(ctx context.Context, phone string) (*user.User, er
 	id := common.NewUUID()
 	now := time.Now().UTC()
 	account := &user.User{ID: id, Phone: phone, CreatedAt: now, UpdatedAt: now}
-	r.byPhone[phone] = account
+	if phone != "" {
+		r.byPhone[phone] = account
+	}
 	r.byID[id] = account
 	return cloneUser(account), nil
 }
@@ -266,244 +269,73 @@ func (r *fakeTelegramLinkRepo) GetByPhone(ctx context.Context, phone string) (*t
 	return nil, common.NewError(common.CodeNotFound, "telegram link not found", nil)
 }
 
-type fakeOTPBot struct {
-	mu        sync.Mutex
-	status    otpbot.Status
-	statusErr error
-	sendErr   error
-	linkErr   error
-	sent      []sentOTP
-	links     []linkToken
+func (r *fakeTelegramLinkRepo) GetByUserID(ctx context.Context, userID string) (*telegram.Link, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, link := range r.links {
+		if link.UserID == userID {
+			copy := *link
+			return &copy, nil
+		}
+	}
+	return nil, common.NewError(common.CodeNotFound, "telegram link not found", nil)
 }
 
-type sentOTP struct {
-	phone string
-	code  string
+type fakeOTPBot struct {
+	mu      sync.Mutex
+	linkErr error
+	links   []linkToken
 }
 
 type linkToken struct {
-	phone string
-	token string
+	userID string
+	token  string
 }
 
 func (b *fakeOTPBot) GetTelegramStatus(ctx context.Context, phone string) (otpbot.Status, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.statusErr != nil {
-		return otpbot.Status{}, b.statusErr
-	}
-	return b.status, nil
+	return otpbot.Status{}, nil
 }
 
-func (b *fakeOTPBot) RegisterLinkToken(ctx context.Context, phone, token string) error {
+func (b *fakeOTPBot) RegisterLinkToken(ctx context.Context, userID, token string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.links = append(b.links, linkToken{phone: phone, token: token})
+	b.links = append(b.links, linkToken{userID: userID, token: token})
 	return b.linkErr
 }
 
 func (b *fakeOTPBot) SendOTP(ctx context.Context, phone, code string) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.sent = append(b.sent, sentOTP{phone: phone, code: code})
-	return b.sendErr
+	return nil
 }
 
-func (b *fakeOTPBot) lastSent() (sentOTP, bool) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.sent) == 0 {
-		return sentOTP{}, false
-	}
-	return b.sent[len(b.sent)-1], true
-}
-
-func TestAuthServiceRequestOTP_SendsViaOTPBot(t *testing.T) {
+func TestAuthServiceRegister_IssuesLinkCode(t *testing.T) {
 	otpRepo := newFakeOTPRepo()
 	userRepo := newFakeUserRepo()
 	refreshRepo := newFakeRefreshTokenRepo()
-	otpBot := &fakeOTPBot{status: otpbot.Status{Linked: true}}
+	otpBot := &fakeOTPBot{}
 	jwtProvider := security.NewJWTProvider("secret")
 	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, otpBot, nil, time.Minute, time.Hour, 5*time.Minute)
 
-	result, err := service.RequestOTP(context.Background(), "+79991234567")
+	result, err := service.Register(context.Background())
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
-	if result != nil {
-		t.Fatalf("expected no link request, got %#v", result)
+	if result.UserID == "" {
+		t.Fatal("expected user_id to be returned")
 	}
-	sent, ok := otpBot.lastSent()
-	if !ok {
-		t.Fatal("expected otp to be sent")
+	if !strings.HasPrefix(result.LinkCode, "PZ-") {
+		t.Fatalf("expected link code to have prefix, got %q", result.LinkCode)
 	}
-	if sent.phone != "+79991234567" {
-		t.Fatalf("expected phone +79991234567, got %s", sent.phone)
-	}
-	if !regexp.MustCompile(`^[0-9]{6}$`).MatchString(sent.code) {
-		t.Fatalf("expected 6 digit code, got %q", sent.code)
-	}
-	entry := otpRepo.entries["+79991234567"]
-	if entry == nil {
-		t.Fatal("expected otp to be stored")
-	}
-	if entry.hash == sent.code {
-		t.Fatal("otp stored in plaintext")
-	}
-	if entry.attemptsLeft != otpMaxAttempts {
-		t.Fatalf("expected attempts_left %d, got %d", otpMaxAttempts, entry.attemptsLeft)
-	}
-}
-
-func TestAuthServiceRequestOTP_TelegramNotLinked(t *testing.T) {
-	otpRepo := newFakeOTPRepo()
-	userRepo := newFakeUserRepo()
-	refreshRepo := newFakeRefreshTokenRepo()
-	otpBot := &fakeOTPBot{status: otpbot.Status{Linked: false}}
-	jwtProvider := security.NewJWTProvider("secret")
-	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, otpBot, nil, time.Minute, time.Hour, 5*time.Minute)
-
-	result, err := service.RequestOTP(context.Background(), "+79991234567")
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
-	if result == nil || !result.NeedLink || result.TelegramToken == "" {
-		t.Fatalf("expected link token, got %#v", result)
-	}
-	if _, ok := otpBot.lastSent(); ok {
-		t.Fatal("did not expect otp to be sent")
-	}
-	if _, ok := otpRepo.entries["+79991234567"]; ok {
-		t.Fatal("did not expect otp to be stored")
+	if _, err := userRepo.GetByID(context.Background(), result.UserID); err != nil {
+		t.Fatalf("expected user to exist, got %v", err)
 	}
 	if len(otpBot.links) != 1 {
-		t.Fatalf("expected link token to be registered, got %d", len(otpBot.links))
+		t.Fatalf("expected link token registration, got %d", len(otpBot.links))
 	}
-	if otpBot.links[0].token != result.TelegramToken {
-		t.Fatalf("expected token %s, got %s", result.TelegramToken, otpBot.links[0].token)
+	if otpBot.links[0].userID != result.UserID.String() {
+		t.Fatalf("expected user_id %s, got %s", result.UserID.String(), otpBot.links[0].userID)
 	}
-}
-
-func TestAuthServiceRequestOTP_OTPBotFailure(t *testing.T) {
-	otpRepo := newFakeOTPRepo()
-	userRepo := newFakeUserRepo()
-	refreshRepo := newFakeRefreshTokenRepo()
-	otpBot := &fakeOTPBot{
-		status:  otpbot.Status{Linked: true},
-		sendErr: otpbot.ErrDeliveryFailed,
-	}
-	jwtProvider := security.NewJWTProvider("secret")
-	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, otpBot, nil, time.Minute, time.Hour, 5*time.Minute)
-
-	result, err := service.RequestOTP(context.Background(), "+79991234567")
-	if err == nil || !common.Is(err, common.CodeDeliveryFailed) {
-		t.Fatalf("expected delivery_failed error, got %v", err)
-	}
-	if result != nil {
-		t.Fatalf("expected no link request, got %#v", result)
-	}
-	if _, ok := otpBot.lastSent(); !ok {
-		t.Fatal("expected otp send attempt")
-	}
-	if _, ok := otpRepo.entries["+79991234567"]; ok {
-		t.Fatal("expected otp to be invalidated on send failure")
-	}
-}
-
-func TestAuthServiceVerifyOTP_Success(t *testing.T) {
-	otpRepo := newFakeOTPRepo()
-	userRepo := newFakeUserRepo()
-	refreshRepo := newFakeRefreshTokenRepo()
-	otpBot := &fakeOTPBot{status: otpbot.Status{Linked: true}}
-	jwtProvider := security.NewJWTProvider("secret")
-	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, otpBot, nil, time.Minute, time.Hour, 5*time.Minute)
-
-	phone := "+79991234567"
-	result, err := service.RequestOTP(context.Background(), phone)
-	if err != nil {
-		t.Fatalf("request otp failed: %v", err)
-	}
-	if result != nil {
-		t.Fatalf("expected no link request, got %#v", result)
-	}
-	sent, ok := otpBot.lastSent()
-	if !ok {
-		t.Fatal("expected otp to be sent")
-	}
-	pair, account, isNewUser, err := service.VerifyOTP(context.Background(), phone, sent.code)
-	if err != nil {
-		t.Fatalf("verify otp failed: %v", err)
-	}
-	if pair == nil || pair.AccessToken == "" || pair.RefreshToken == "" {
-		t.Fatal("expected token pair to be issued")
-	}
-	if account == nil {
-		t.Fatal("expected account to be returned")
-	}
-	if !isNewUser {
-		t.Fatal("expected isNewUser to be true")
-	}
-	if len(account.Roles) != 0 {
-		t.Fatalf("expected no role to be set, got %#v", account.Roles)
-	}
-	if _, ok := otpRepo.entries[phone]; ok {
-		t.Fatal("expected otp to be invalidated after success")
-	}
-	if len(refreshRepo.tokens) == 0 {
-		t.Fatal("expected refresh token to be stored")
-	}
-}
-
-func TestAuthServiceVerifyOTP_Expired(t *testing.T) {
-	otpRepo := newFakeOTPRepo()
-	userRepo := newFakeUserRepo()
-	refreshRepo := newFakeRefreshTokenRepo()
-	jwtProvider := security.NewJWTProvider("secret")
-	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, &fakeOTPBot{}, nil, time.Minute, time.Hour, 5*time.Minute)
-
-	phone := "+79991234567"
-	otpRepo.entries[phone] = &otpEntry{
-		hash:         hashOTP("123456"),
-		expiresAt:    time.Now().UTC().Add(-time.Minute).Unix(),
-		attemptsLeft: otpMaxAttempts,
-		requestedAt:  time.Now().UTC().Add(-time.Minute).Unix(),
-	}
-	_, _, _, err := service.VerifyOTP(context.Background(), phone, "123456")
-	if err == nil || !common.Is(err, common.CodeUnauthorized) {
-		t.Fatalf("expected unauthorized error, got %v", err)
-	}
-	if _, ok := otpRepo.entries[phone]; ok {
-		t.Fatal("expected otp to be invalidated on expiry")
-	}
-}
-
-func TestAuthServiceVerifyOTP_AttemptsExceeded(t *testing.T) {
-	otpRepo := newFakeOTPRepo()
-	userRepo := newFakeUserRepo()
-	refreshRepo := newFakeRefreshTokenRepo()
-	jwtProvider := security.NewJWTProvider("secret")
-	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, &fakeOTPBot{}, nil, time.Minute, time.Hour, 5*time.Minute)
-
-	phone := "+79991234567"
-	otpRepo.entries[phone] = &otpEntry{
-		hash:         hashOTP("111111"),
-		expiresAt:    time.Now().UTC().Add(time.Minute).Unix(),
-		attemptsLeft: 2,
-		requestedAt:  time.Now().UTC().Unix(),
-	}
-	_, _, _, err := service.VerifyOTP(context.Background(), phone, "000000")
-	if err == nil || !common.Is(err, common.CodeUnauthorized) {
-		t.Fatalf("expected unauthorized error, got %v", err)
-	}
-	if entry := otpRepo.entries[phone]; entry == nil || entry.attemptsLeft != 1 {
-		t.Fatalf("expected attempts_left 1, got %#v", entry)
-	}
-	_, _, _, err = service.VerifyOTP(context.Background(), phone, "000000")
-	if err == nil || !common.Is(err, common.CodeUnauthorized) {
-		t.Fatalf("expected unauthorized error, got %v", err)
-	}
-	if _, ok := otpRepo.entries[phone]; ok {
-		t.Fatal("expected otp to be invalidated after attempts")
+	if otpBot.links[0].token != result.LinkCode {
+		t.Fatalf("expected link code %s, got %s", result.LinkCode, otpBot.links[0].token)
 	}
 }
 
@@ -512,22 +344,120 @@ func TestAuthServiceRequestOTPByTelegram(t *testing.T) {
 	userRepo := newFakeUserRepo()
 	refreshRepo := newFakeRefreshTokenRepo()
 	linkRepo := newFakeTelegramLinkRepo()
-	linkRepo.links[42] = &telegram.Link{ChatID: 42, Phone: "+79991234567", UserID: "user-1"}
 	jwtProvider := security.NewJWTProvider("secret")
 	service := NewAuthServiceWithTelegramLinks(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, nil, linkRepo, nil, time.Minute, time.Hour, 5*time.Minute)
+
+	account, err := userRepo.Create(context.Background(), "")
+	if err != nil {
+		t.Fatalf("expected user created, got %v", err)
+	}
+	linkRepo.links[42] = &telegram.Link{ChatID: 42, UserID: account.ID.String()}
 
 	result, err := service.RequestOTPByTelegram(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
-	if result == nil || result.Code == "" {
-		t.Fatalf("expected otp code, got %#v", result)
-	}
 	if !regexp.MustCompile(`^[0-9]{6}$`).MatchString(result.Code) {
 		t.Fatalf("expected 6 digit code, got %q", result.Code)
 	}
-	if otpRepo.entries["+79991234567"] == nil {
+	entry := otpRepo.entries[account.ID.String()]
+	if entry == nil {
 		t.Fatal("expected otp to be stored")
+	}
+	if entry.hash == result.Code {
+		t.Fatal("otp stored in plaintext")
+	}
+	if entry.attemptsLeft != otpMaxAttempts {
+		t.Fatalf("expected attempts_left %d, got %d", otpMaxAttempts, entry.attemptsLeft)
+	}
+}
+
+func TestAuthServiceVerifyOTP_Success(t *testing.T) {
+	otpRepo := newFakeOTPRepo()
+	userRepo := newFakeUserRepo()
+	refreshRepo := newFakeRefreshTokenRepo()
+	jwtProvider := security.NewJWTProvider("secret")
+	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, nil, nil, time.Minute, time.Hour, 5*time.Minute)
+
+	account, err := userRepo.Create(context.Background(), "")
+	if err != nil {
+		t.Fatalf("expected user created, got %v", err)
+	}
+	code := "123456"
+	otpRepo.entries[account.ID.String()] = &otpEntry{
+		hash:         hashOTP(code),
+		expiresAt:    time.Now().Add(5 * time.Minute).UTC().Unix(),
+		attemptsLeft: otpMaxAttempts,
+		requestedAt:  time.Now().UTC().Unix(),
+	}
+
+	pair, _, isNewUser, err := service.VerifyOTP(context.Background(), account.ID.String(), code)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if pair == nil || pair.AccessToken == "" {
+		t.Fatal("expected access token")
+	}
+	if !isNewUser {
+		t.Fatal("expected is_new_user to be true")
+	}
+	if _, ok := otpRepo.entries[account.ID.String()]; ok {
+		t.Fatal("expected otp to be invalidated")
+	}
+}
+
+func TestAuthServiceVerifyOTP_Expired(t *testing.T) {
+	otpRepo := newFakeOTPRepo()
+	userRepo := newFakeUserRepo()
+	refreshRepo := newFakeRefreshTokenRepo()
+	jwtProvider := security.NewJWTProvider("secret")
+	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, nil, nil, time.Minute, time.Hour, 5*time.Minute)
+
+	account, err := userRepo.Create(context.Background(), "")
+	if err != nil {
+		t.Fatalf("expected user created, got %v", err)
+	}
+	code := "123456"
+	otpRepo.entries[account.ID.String()] = &otpEntry{
+		hash:         hashOTP(code),
+		expiresAt:    time.Now().Add(-1 * time.Minute).UTC().Unix(),
+		attemptsLeft: otpMaxAttempts,
+		requestedAt:  time.Now().UTC().Unix(),
+	}
+
+	_, _, _, err = service.VerifyOTP(context.Background(), account.ID.String(), code)
+	if !common.Is(err, common.CodeUnauthorized) {
+		t.Fatalf("expected unauthorized error, got %v", err)
+	}
+	if _, ok := otpRepo.entries[account.ID.String()]; ok {
+		t.Fatal("expected otp to be invalidated")
+	}
+}
+
+func TestAuthServiceVerifyOTP_AttemptsExceeded(t *testing.T) {
+	otpRepo := newFakeOTPRepo()
+	userRepo := newFakeUserRepo()
+	refreshRepo := newFakeRefreshTokenRepo()
+	jwtProvider := security.NewJWTProvider("secret")
+	service := NewAuthService(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, nil, nil, time.Minute, time.Hour, 5*time.Minute)
+
+	account, err := userRepo.Create(context.Background(), "")
+	if err != nil {
+		t.Fatalf("expected user created, got %v", err)
+	}
+	otpRepo.entries[account.ID.String()] = &otpEntry{
+		hash:         hashOTP("000000"),
+		expiresAt:    time.Now().Add(5 * time.Minute).UTC().Unix(),
+		attemptsLeft: 1,
+		requestedAt:  time.Now().UTC().Unix(),
+	}
+
+	_, _, _, err = service.VerifyOTP(context.Background(), account.ID.String(), "123456")
+	if !common.Is(err, common.CodeUnauthorized) {
+		t.Fatalf("expected unauthorized error, got %v", err)
+	}
+	if _, ok := otpRepo.entries[account.ID.String()]; ok {
+		t.Fatal("expected otp to be invalidated after attempts exceeded")
 	}
 }
 
@@ -536,20 +466,30 @@ func TestAuthServiceVerifyOTPByTelegram(t *testing.T) {
 	userRepo := newFakeUserRepo()
 	refreshRepo := newFakeRefreshTokenRepo()
 	linkRepo := newFakeTelegramLinkRepo()
-	linkRepo.links[7] = &telegram.Link{ChatID: 7, Phone: "+79990000000", UserID: "user-1"}
 	jwtProvider := security.NewJWTProvider("secret")
 	service := NewAuthServiceWithTelegramLinks(userRepo, otpRepo, refreshRepo, noopAnalyticsRepo{}, jwtProvider, nil, linkRepo, nil, time.Minute, time.Hour, 5*time.Minute)
 
-	req, err := service.RequestOTPByTelegram(context.Background(), 7)
+	account, err := userRepo.Create(context.Background(), "")
 	if err != nil {
-		t.Fatalf("request otp failed: %v", err)
+		t.Fatalf("expected user created, got %v", err)
 	}
-	pair, _, _, err := service.VerifyOTPByTelegram(context.Background(), 7, req.Code)
+	linkRepo.links[7] = &telegram.Link{ChatID: 7, UserID: account.ID.String()}
+	otpRepo.entries[account.ID.String()] = &otpEntry{
+		hash:         hashOTP("123456"),
+		expiresAt:    time.Now().Add(5 * time.Minute).UTC().Unix(),
+		attemptsLeft: otpMaxAttempts,
+		requestedAt:  time.Now().UTC().Unix(),
+	}
+
+	pair, _, isNewUser, err := service.VerifyOTPByTelegram(context.Background(), 7, "123456")
 	if err != nil {
-		t.Fatalf("verify otp failed: %v", err)
+		t.Fatalf("expected nil error, got %v", err)
 	}
-	if pair == nil || pair.AccessToken == "" || pair.RefreshToken == "" {
-		t.Fatal("expected token pair to be issued")
+	if pair == nil || pair.AccessToken == "" {
+		t.Fatal("expected access token")
+	}
+	if !isNewUser {
+		t.Fatal("expected is_new_user to be true")
 	}
 }
 

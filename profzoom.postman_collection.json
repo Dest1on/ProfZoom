@@ -4,15 +4,42 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "api_base_url", "value": "http://localhost:8080" },
-    { "key": "otp_base_url", "value": "http://localhost:8081" },
-    { "key": "otp_internal_key", "value": "super-secret-internal-key" },
-    { "key": "phone", "value": "+79991234567" },
-    { "key": "otp_code", "value": "123456" },
-    { "key": "telegram_id", "value": "123456789" },
-    { "key": "telegram_link_token", "value": "test_link_token" },
-    { "key": "telegram_webhook_secret", "value": "change-me" },
-    { "key": "vacancy_id", "value": "1" }
+    {
+      "key": "api_base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "otp_base_url",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "otp_internal_key",
+      "value": "super-secret-internal-key"
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "link_code",
+      "value": ""
+    },
+    {
+      "key": "otp_code",
+      "value": "123456"
+    },
+    {
+      "key": "telegram_id",
+      "value": "123456789"
+    },
+    {
+      "key": "telegram_webhook_secret",
+      "value": "change-me"
+    },
+    {
+      "key": "vacancy_id",
+      "value": "1"
+    }
   ],
   "item": [
     {
@@ -26,29 +53,31 @@
           }
         },
         {
-          "name": "Request OTP (phone)",
+          "name": "Register (link code)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\"\n}"
-            },
-            "url": "{{api_base_url}}/auth/send-code"
+            "url": "{{api_base_url}}/auth/register"
           }
         },
         {
-          "name": "Verify OTP (phone)",
+          "name": "Verify OTP (user_id)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"code\": \"{{otp_code}}\"\n}"
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"code\": \"{{otp_code}}\"\n}"
             },
             "url": "{{api_base_url}}/auth/verify-code"
           }
@@ -58,8 +87,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{otp_internal_key}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otp_internal_key}}"
+              },
+              {
+                "key": "X-Internal-Key",
+                "value": "{{otp_internal_key}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -73,7 +112,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -109,16 +151,22 @@
           }
         },
         {
-          "name": "Register Telegram Link Token",
+          "name": "Register Link Code",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{otp_internal_key}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otp_internal_key}}"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"token\": \"{{telegram_link_token}}\"\n}"
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"token\": \"{{link_code}}\"\n}"
             },
             "url": "{{otp_base_url}}/telegram/link-token"
           }
@@ -128,9 +176,12 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{otp_internal_key}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otp_internal_key}}"
+              }
             ],
-            "url": "{{otp_base_url}}/telegram/status?phone={{phone}}"
+            "url": "{{otp_base_url}}/telegram/status?user_id={{user_id}}"
           }
         },
         {
@@ -138,8 +189,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{otp_internal_key}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otp_internal_key}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -153,12 +210,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Telegram-Bot-Api-Secret-Token", "value": "{{telegram_webhook_secret}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Telegram-Bot-Api-Secret-Token",
+                "value": "{{telegram_webhook_secret}}"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"update_id\": 1,\n  \"message\": {\n    \"message_id\": 1,\n    \"chat\": { \"id\": {{telegram_id}}, \"type\": \"private\" },\n    \"text\": \"/start {{telegram_link_token}}\"\n  }\n}"
+              "raw": "{\n  \"update_id\": 1,\n  \"message\": {\n    \"message_id\": 1,\n    \"chat\": { \"id\": {{telegram_id}}, \"type\": \"private\" },\n    \"text\": \"{{link_code}}\"\n  }\n}"
             },
             "url": "{{otp_base_url}}/telegram/webhook"
           }
